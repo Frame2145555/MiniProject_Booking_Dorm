@@ -1,0 +1,611 @@
+{
+  "info": {
+    "name": "DormSpace - Student Dashboard API",
+    "description": "ชุดทดสอบ API ระบบ 6 (Student Dashboard) ต้องรัน server (node server.js) และใส่ token ใน Variables ก่อน\nสร้าง token: node scripts/makeToken.js <user_id> [role]",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "tokenAlex",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tokenJordan",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tokenSam",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tokenAdmin",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
+        },
+        "description": "ตรวจว่า backend ต่อฐานข้อมูลได้"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code เป็น 200\", function () { pm.response.to.have.status(200); });",
+              "pm.test(\"ต่อ DB dormspace ได้ และมี 14 ตาราง\", function () {",
+              "  const j = pm.response.json();",
+              "  pm.expect(j.status).to.eql(\"ok\");",
+              "  pm.expect(j.database).to.eql(\"dormspace\");",
+              "  pm.expect(Number(j.tables)).to.eql(14);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. การจองของฉัน (GET /bookings)",
+      "item": [
+        {
+          "name": "Alex ดูการจองของตัวเอง (2 รายการ)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenAlex}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "bookings"
+              ]
+            },
+            "description": "ใช้ token ของ Alex (user_id=1)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 200\", function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "pm.test(\"success เป็น true และมี 2 รายการ\", function () { pm.expect(j.success).to.eql(true); pm.expect(j.data).to.have.lengthOf(2); });",
+                  "const ref = (r) => j.data.find(b => b.reference_code === r);",
+                  "pm.test(\"DS-000001: reserved, ห้อง 102 ตึก A, Fall 2027, Micro-Fridge, มัดจำ 200\", function () {",
+                  "  const b = ref(\"DS-000001\"); pm.expect(b).to.exist;",
+                  "  pm.expect(b.status).to.eql(\"reserved\");",
+                  "  pm.expect(b.room_number).to.eql(\"102\");",
+                  "  pm.expect(b.building_code).to.eql(\"A\");",
+                  "  pm.expect(b.semester_name).to.eql(\"Fall 2027\");",
+                  "  pm.expect(b.addons).to.eql(\"Micro-Fridge Rental\");",
+                  "  pm.expect(Number(b.deposit_paid)).to.eql(200);",
+                  "});",
+                  "pm.test(\"DS-000004: สถานะ cancelled\", function () { const b = ref(\"DS-000004\"); pm.expect(b).to.exist; pm.expect(b.status).to.eql(\"cancelled\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sam ดูการจองของตัวเอง (pending)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenSam}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "bookings"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 200\", function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "pm.test(\"มี 1 รายการ DS-000003 สถานะ pending\", function () { pm.expect(j.data).to.have.lengthOf(1); pm.expect(j.data[0].reference_code).to.eql(\"DS-000003\"); pm.expect(j.data[0].status).to.eql(\"pending\"); });",
+                  "pm.test(\"ยังไม่จ่ายมัดจำ และมี add-on Parking\", function () { pm.expect(Number(j.data[0].deposit_paid)).to.eql(0); pm.expect(j.data[0].addons).to.eql(\"Parking\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ไม่แนบ token (ต้องถูกปฏิเสธ)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "bookings"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 401\", function () { pm.response.to.have.status(401); });",
+                  "pm.test(\"ข้อความ: Missing token\", function () { const j = pm.response.json(); pm.expect(j.success).to.eql(false); pm.expect(j.message).to.eql(\"Missing token\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "token ปลอม (ต้องถูกปฏิเสธ)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer abc.def.ghi"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "bookings"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 401\", function () { pm.response.to.have.status(401); });",
+                  "pm.test(\"ข้อความ: Invalid or expired token\", function () { const j = pm.response.json(); pm.expect(j.success).to.eql(false); pm.expect(j.message).to.eql(\"Invalid or expired token\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. รูมเมท + % match (GET /bookings/:id/roommates)",
+      "item": [
+        {
+          "name": "Alex ดูรูมเมทของการจอง #1 (Jordan 85%)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenAlex}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/bookings/1/roommates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "bookings",
+                "1",
+                "roommates"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 200\", function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "pm.test(\"มีรูมเมท 1 คน คือ Jordan Lee\", function () { pm.expect(j.data).to.have.lengthOf(1); pm.expect(j.data[0].full_name).to.eql(\"Jordan Lee\"); });",
+                  "pm.test(\"match_percent เป็น 85 และนอนเหมือนกัน\", function () { pm.expect(j.data[0].match_percent).to.eql(85); pm.expect(j.data[0].same_sleep_habit).to.eql(true); });",
+                  "pm.test(\"ไม่เปิดเผยอีเมล/เบอร์โทรของรูมเมท\", function () { pm.expect(j.data[0]).to.not.have.property(\"email\"); pm.expect(j.data[0]).to.not.have.property(\"phone\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Jordan ดูรูมเมทของการจอง #2 (Alex 85%)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenJordan}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/bookings/2/roommates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "bookings",
+                "2",
+                "roommates"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 200\", function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "pm.test(\"รูมเมทคือ Alex Morgan และ % เท่ากัน (สมมาตร)\", function () { pm.expect(j.data).to.have.lengthOf(1); pm.expect(j.data[0].full_name).to.eql(\"Alex Morgan\"); pm.expect(j.data[0].match_percent).to.eql(85); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "การจองที่ไม่มีรูมเมท (#4) ได้ลิสต์ว่าง",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenAlex}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/bookings/4/roommates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "bookings",
+                "4",
+                "roommates"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"data เป็นลิสต์ว่าง\", function () { const j = pm.response.json(); pm.expect(j.success).to.eql(true); pm.expect(j.data).to.have.lengthOf(0); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "แอบดูการจองของคนอื่น (ต้องได้ 404)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenAlex}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/bookings/2/roommates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "bookings",
+                "2",
+                "roommates"
+              ]
+            },
+            "description": "Alex ใช้ booking #2 ซึ่งเป็นของ Jordan"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 404\", function () { pm.response.to.have.status(404); });",
+                  "pm.test(\"ข้อความ: Booking not found\", function () { const j = pm.response.json(); pm.expect(j.success).to.eql(false); pm.expect(j.message).to.eql(\"Booking not found\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "booking id ไม่ถูกต้อง (ต้องได้ 400)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenAlex}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/bookings/abc/roommates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "bookings",
+                "abc",
+                "roommates"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 400\", function () { pm.response.to.have.status(400); });",
+                  "pm.test(\"ข้อความ: Invalid booking id\", function () { const j = pm.response.json(); pm.expect(j.success).to.eql(false); pm.expect(j.message).to.eql(\"Invalid booking id\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ไม่แนบ token (ต้องถูกปฏิเสธ)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/bookings/1/roommates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "bookings",
+                "1",
+                "roommates"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 401\", function () { pm.response.to.have.status(401); });",
+                  "pm.test(\"ข้อความ: Missing token\", function () { const j = pm.response.json(); pm.expect(j.success).to.eql(false); pm.expect(j.message).to.eql(\"Missing token\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. ประวัติการชำระเงิน (GET /payments)",
+      "item": [
+        {
+          "name": "Alex ดูประวัติการจ่ายเงิน (paid + refunded)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenAlex}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "payments"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 200\", function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "pm.test(\"สรุปยอด: จ่ายแล้ว 200, คืนเงิน 200, รอจ่าย 0\", function () { pm.expect(j.summary.total_paid).to.eql(200); pm.expect(j.summary.total_refunded).to.eql(200); pm.expect(j.summary.total_pending).to.eql(0); });",
+                  "pm.test(\"มี 2 รายการ เรียงล่าสุดก่อน (RC-000001 มาก่อน)\", function () { pm.expect(j.data).to.have.lengthOf(2); pm.expect(j.data[0].receipt_no).to.eql(\"RC-000001\"); pm.expect(j.data[0].status).to.eql(\"paid\"); pm.expect(j.data[1].status).to.eql(\"refunded\"); });",
+                  "pm.test(\"ไม่เปิดเผย transaction_ref\", function () { pm.expect(j.data[0]).to.not.have.property(\"transaction_ref\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sam ดูประวัติการจ่ายเงิน (รอจ่าย)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenSam}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "payments"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 200\", function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "pm.test(\"มี 1 รายการ pending ยังไม่มีใบเสร็จ/วันที่จ่าย\", function () { pm.expect(j.data).to.have.lengthOf(1); pm.expect(j.data[0].status).to.eql(\"pending\"); pm.expect(j.data[0].receipt_no).to.eql(null); pm.expect(j.data[0].paid_at).to.eql(null); });",
+                  "pm.test(\"total_pending เป็น 200\", function () { pm.expect(j.summary.total_pending).to.eql(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ผู้ใช้ที่ไม่เคยจ่ายเงิน (admin) ได้ลิสต์ว่าง",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenAdmin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "payments"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 200\", function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "pm.test(\"data ว่าง และยอดรวมเป็น 0 ทุกช่อง\", function () { pm.expect(j.data).to.have.lengthOf(0); pm.expect(j.summary.total_paid).to.eql(0); pm.expect(j.summary.total_refunded).to.eql(0); pm.expect(j.summary.total_pending).to.eql(0); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ไม่แนบ token (ต้องถูกปฏิเสธ)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "payments"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code เป็น 401\", function () { pm.response.to.have.status(401); });",
+                  "pm.test(\"ข้อความ: Missing token\", function () { const j = pm.response.json(); pm.expect(j.success).to.eql(false); pm.expect(j.message).to.eql(\"Missing token\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
