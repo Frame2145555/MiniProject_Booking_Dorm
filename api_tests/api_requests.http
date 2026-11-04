@@ -1,0 +1,170 @@
+### --------------------------------------------------------------------
+### DormSpace Sprint 2 — API Testing Suite (VS Code LiteClient)
+### Schema Strictly Matched to dormspace.sql
+### --------------------------------------------------------------------
+
+@baseUrl = http://localhost:3000/api
+
+### 1. Admin Login
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@dormspace.ac.th",
+  "password": "admin123"
+}
+
+### Authorization Variable
+@authToken = {{login.response.body.token}}
+
+### --------------------------------------------------------------------
+### BUILDINGS (code, name, total_floors, description)
+### --------------------------------------------------------------------
+
+### 2. Get All Buildings
+GET {{baseUrl}}/admin/buildings
+Authorization: Bearer {{authToken}}
+
+### 3. Create Building
+POST {{baseUrl}}/admin/buildings
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "code": "BDD",
+  "name": "Building D - Tulip",
+  "total_floors": 4,
+  "description": "New residence building with elevator access"
+}
+
+### 4. Update Building (ID: 1)
+PUT {{baseUrl}}/admin/buildings/1
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "code": "BDA",
+  "name": "Building A - Sunflower (Renovated)",
+  "total_floors": 5,
+  "description": "Renovated room facilities"
+}
+
+### --------------------------------------------------------------------
+### ROOM TYPES (name, capacity, description)
+### --------------------------------------------------------------------
+
+### 5. Get All Room Types
+GET {{baseUrl}}/admin/room-types
+Authorization: Bearer {{authToken}}
+
+### 6. Create Room Type
+POST {{baseUrl}}/admin/room-types
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "Executive Quad",
+  "capacity": 4,
+  "description": "Four single beds with spacious study desks"
+}
+
+### --------------------------------------------------------------------
+### ROOMS (building_id, room_type_id, room_number, floor, price_per_month, size_sqft, facing, grid_x, grid_y, is_active)
+### --------------------------------------------------------------------
+
+### 7. Get All Rooms
+GET {{baseUrl}}/admin/rooms
+Authorization: Bearer {{authToken}}
+
+### 8. Create Room with Amenities & Images
+POST {{baseUrl}}/admin/rooms
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "building_id": 1,
+  "room_type_id": 1,
+  "room_number": "105",
+  "floor": 1,
+  "price_per_month": 4500.00,
+  "size_sqft": 240.0,
+  "facing": "N",
+  "grid_x": 1,
+  "grid_y": 5,
+  "is_active": 1,
+  "amenities": [1, 2, 3],
+  "image_urls": [
+    "https://images.unsplash.com/photo-1555854877-bab0e564b8d5"
+  ]
+}
+
+### 9. Update Room (ID: 1)
+PUT {{baseUrl}}/admin/rooms/1
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "price_per_month": 4800.00,
+  "is_active": 1,
+  "size_sqft": 250.0,
+  "facing": "N"
+}
+
+### --------------------------------------------------------------------
+### AMENITIES (name, icon)
+### --------------------------------------------------------------------
+
+### 10. Get All Amenities
+GET {{baseUrl}}/admin/amenities
+Authorization: Bearer {{authToken}}
+
+### 11. Create Amenity
+POST {{baseUrl}}/admin/amenities
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "Smart TV 55 Inch",
+  "icon": "tv"
+}
+
+### --------------------------------------------------------------------
+### SEMESTERS (name, start_date, end_date, is_open)
+### --------------------------------------------------------------------
+
+### 12. Get All Semesters
+GET {{baseUrl}}/admin/semesters
+Authorization: Bearer {{authToken}}
+
+### 13. Create Semester
+POST {{baseUrl}}/admin/semesters
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "1/2027",
+  "start_date": "2027-08-01",
+  "end_date": "2027-12-20",
+  "is_open": 1
+}
+
+### --------------------------------------------------------------------
+### ADDONS (name, description, price_per_month, is_active)
+### --------------------------------------------------------------------
+
+### 14. Get All Addons
+GET {{baseUrl}}/admin/addons
+Authorization: Bearer {{authToken}}
+
+### 15. Create Addon
+POST {{baseUrl}}/admin/addons
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "Dedicated Fiber Wi-Fi 500Mbps",
+  "description": "High-speed private internet connection",
+  "price_per_month": 290.00,
+  "is_active": 1
+}
