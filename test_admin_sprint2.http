@@ -1,0 +1,59 @@
+@baseUrl = http://localhost:3000/api/admin
+
+### ==========================================
+### 1. Buildings (CRUD - Direct Access)
+### ==========================================
+GET {{baseUrl}}/buildings
+
+###
+POST {{baseUrl}}/buildings
+Content-Type: application/json
+
+{
+  "code": "A",
+  "name": "North Hall",
+  "total_floors": 4,
+  "description": "ตึกหอพักโซนทิศเหนือ"
+}
+
+### ==========================================
+### 2. Room Types (CRUD)
+### ==========================================
+GET {{baseUrl}}/room-types
+
+###
+POST {{baseUrl}}/room-types
+Content-Type: application/json
+
+{
+  "name": "Single Studio",
+  "capacity": 1,
+  "description": "ห้องพักเดี่ยว"
+}
+
+### ==========================================
+### 3. Amenities (CRUD)
+### ==========================================
+GET {{baseUrl}}/amenities
+
+###
+POST {{baseUrl}}/amenities
+Content-Type: application/json
+
+{
+  "name": "Air Conditioner",
+  "icon": "ac_unit"
+}
+
+### ==========================================
+### 4. Users (Suspend / Activate)
+### ==========================================
+GET {{baseUrl}}/users
+
+###
+PATCH {{baseUrl}}/users/2/status
+Content-Type: application/json
+
+{
+  "is_active": false
+}
