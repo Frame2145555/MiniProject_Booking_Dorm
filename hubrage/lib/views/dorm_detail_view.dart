@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'chat_view.dart';
+import '../services/chat_service.dart';
+import '../services/session.dart';
+import 'chat_room_view.dart';
 
 class DormDetailView extends StatefulWidget {
   final Map<String, dynamic> dorm;
@@ -58,6 +60,50 @@ class _DormDetailViewState extends State<DormDetailView> {
 
   List<String> get _amenities =>
       List<String>.from(widget.dorm['tags'] ?? _amenityIcons.keys.take(8));
+
+  // หน้า Home ยังใช้ข้อมูลตัวอย่าง id แบบ 'dorm_1' จึงแปลงเป็นเลข id ใน MySQL ไปก่อน
+  // (เปลี่ยนเป็น widget.dorm['id'] ตรงๆ ได้เมื่อหน้า Home ดึงหอจาก API แล้ว)
+  int? get _dormDbId {
+    final raw = widget.dorm['id']?.toString() ?? 'dorm_1';
+    return int.tryParse(raw.replaceFirst('dorm_', ''));
+  }
+
+  bool _openingChat = false;
+
+  Future<void> _startChat() async {
+    if (!Session.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณาเข้าสู่ระบบก่อนเริ่มแชท')),
+      );
+      return;
+    }
+    final dormId = _dormDbId;
+    if (dormId == null || _openingChat) return;
+
+    setState(() => _openingChat = true);
+    final conversationId = await ChatService.instance.openConversation(dormId);
+    if (!mounted) return;
+    setState(() => _openingChat = false);
+
+    if (conversationId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('เปิดห้องแชทไม่สำเร็จ (หอนี้อาจยังไม่มีในระบบ หรือคุณเป็นเจ้าของหอนี้)'),
+        ),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatRoomView(
+          conversationId: conversationId,
+          title: _title,
+          subtitle: 'แชทกับเจ้าของหอ',
+        ),
+      ),
+    );
+  }
 
   void _toggleFavorite() {
     setState(() => _isFavorite = !_isFavorite);
@@ -412,10 +458,7 @@ class _DormDetailViewState extends State<DormDetailView> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ChatView()),
-                      ),
+                      onPressed: _openingChat ? null : _startChat,
                       icon: const Icon(Icons.forum_rounded),
                       label: const Text('เริ่มแชทกับเจ้าของหอ'),
                       style: ElevatedButton.styleFrom(
