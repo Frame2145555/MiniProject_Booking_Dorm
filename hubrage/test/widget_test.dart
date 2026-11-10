@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../lib/services/session.dart';
+import '../lib/theme/app_theme.dart';
 import '../lib/views/auth_view.dart';
 import '../lib/views/chat_room_view.dart';
 import '../lib/views/chat_view.dart';
@@ -14,7 +15,7 @@ const me = 1;
 const otherUser = 2;
 const roomId = 10;
 
-Widget app(Widget page) => MaterialApp(home: page);
+Widget app(Widget page) => MaterialApp(theme: AppTheme.light(), home: page);
 
 Map<String, dynamic> message(int id, int senderId, String text) => {
       'id': id,
@@ -25,11 +26,21 @@ Map<String, dynamic> message(int id, int senderId, String text) => {
       'read_at': null,
     };
 
-void loginAs(int userId) {
+Map<String, dynamic> conversation({String lastMessage = 'ว่างครับ', int unread = 0}) => {
+      'id': roomId,
+      'other_name': 'เจ้าของหอทดสอบ',
+      'dorm_name': 'หอรวย เธะ',
+      'last_message': lastMessage,
+      'unread': unread,
+    };
+
+/// จำลองว่า login แล้ว (เหมือนที่ AuthService.login ทำ แต่ไม่ต้องมี server)
+void loginAs(int userId, {String role = 'tenant'}) {
   Session.token = 'fake-token';
   Session.userId = userId;
-  Session.role = 'tenant';
+  Session.role = role;
   Session.fullName = 'ผู้เช่าทดสอบ';
+  Session.loggedIn.value = true;
 }
 
 void main() {
@@ -60,7 +71,7 @@ void main() {
 
   //=================== หน้าห้องแชท =======================
   group('หน้าห้องแชท (ChatRoomView)', () {
-    testWidgets('แสดงชื่อคู่แชท และประวัติข้อความ', (tester) async {
+    testWidgets('แสดงชื่อคู่แชท ชื่อหอ และประวัติข้อความ', (tester) async {
       loginAs(me);
       service.history = [
         message(1, otherUser, 'สวัสดีครับ'),
@@ -75,11 +86,11 @@ void main() {
       expect(find.text('ห้องยังว่างไหมครับ'), findsOneWidget);
     });
 
-    testWidgets('ยังไม่มีข้อความ แสดงข้อความชวนทักทาย', (tester) async {
+    testWidgets('ยังไม่มีข้อความ แสดงข้อความชวนเริ่มคุย', (tester) async {
       loginAs(me);
       await openRoom(tester);
 
-      expect(find.text('ยังไม่มีข้อความ เริ่มทักทายได้เลย'), findsOneWidget);
+      expect(find.text('เริ่มต้นการสนทนากับ เจ้าของหอทดสอบ'), findsOneWidget);
     });
 
     testWidgets('พิมพ์แล้วกดส่ง -> ข้อความขึ้นบนจอ และช่องพิมพ์ว่าง', (tester) async {
@@ -94,7 +105,7 @@ void main() {
       expect(field.controller!.text, isEmpty);
     });
 
-    testWidgets('ข้อความของเราอยู่ขวา (สีส้ม) ของอีกฝั่งอยู่ซ้าย', (tester) async {
+    testWidgets('ข้อความของเราอยู่ขวา ของอีกฝั่งอยู่ซ้าย', (tester) async {
       loginAs(me);
       service.history = [
         message(1, otherUser, 'ข้อความอีกฝั่ง'),
@@ -102,12 +113,10 @@ void main() {
       ];
       await openRoom(tester);
 
-      final mine = tester.widget<Align>(
-          find.ancestor(of: find.text('ข้อความเรา'), matching: find.byType(Align)).first);
-      final theirs = tester.widget<Align>(
-          find.ancestor(of: find.text('ข้อความอีกฝั่ง'), matching: find.byType(Align)).first);
-      expect(mine.alignment, Alignment.centerRight);
-      expect(theirs.alignment, Alignment.centerLeft);
+      Align bubbleOf(String text) => tester.widget<Align>(
+          find.ancestor(of: find.text(text), matching: find.byType(Align)).first);
+      expect(bubbleOf('ข้อความเรา').alignment, Alignment.centerRight);
+      expect(bubbleOf('ข้อความอีกฝั่ง').alignment, Alignment.centerLeft);
     });
 
     testWidgets('อีกฝั่งส่งข้อความมา -> ขึ้นบนจอทันที', (tester) async {
@@ -158,11 +167,39 @@ void main() {
 
   //=================== หน้ารายการแชท =======================
   group('หน้ารายการแชท (ChatView)', () {
-    testWidgets('ยังไม่ login -> บอกให้เข้าสู่ระบบก่อน', (tester) async {
+    testWidgets('ยังไม่ login -> ชวนเข้าสู่ระบบ และไม่โหลดรายการ', (tester) async {
       await tester.pumpWidget(app(ChatView(service: service)));
 
-      expect(find.textContaining('กรุณาเข้าสู่ระบบ'), findsOneWidget);
+      expect(find.text('กรุณาเข้าสู่ระบบก่อนใช้งานแชท'), findsOneWidget);
+      expect(find.text('ไปหน้าเข้าสู่ระบบ'), findsOneWidget);
       expect(service.fetchConversationsCount, 0);
+    });
+
+    testWidgets('เปิดหน้าไว้ก่อน แล้วค่อย login -> รายการแชทขึ้นเอง', (tester) async {
+      // เหมือนใน NavigationShell ที่สร้างหน้าแชทไว้ตั้งแต่เปิดแอป
+      service.conversationList = [conversation()];
+      await tester.pumpWidget(app(ChatView(embedded: true, service: service)));
+      expect(find.text('กรุณาเข้าสู่ระบบก่อนใช้งานแชท'), findsOneWidget);
+
+      loginAs(me);
+      await tester.pumpAndSettle();
+
+      expect(find.text('เจ้าของหอทดสอบ'), findsOneWidget);
+      expect(find.text('กรุณาเข้าสู่ระบบก่อนใช้งานแชท'), findsNothing);
+    });
+
+    testWidgets('logout -> รายการแชทหาย กลับเป็นหน้าชวนเข้าสู่ระบบ', (tester) async {
+      loginAs(me);
+      service.conversationList = [conversation()];
+      await tester.pumpWidget(app(ChatView(embedded: true, service: service)));
+      await tester.pumpAndSettle();
+      expect(find.text('เจ้าของหอทดสอบ'), findsOneWidget);
+
+      Session.clear();
+      await tester.pumpAndSettle();
+
+      expect(find.text('เจ้าของหอทดสอบ'), findsNothing);
+      expect(find.text('กรุณาเข้าสู่ระบบก่อนใช้งานแชท'), findsOneWidget);
     });
 
     testWidgets('login แล้วไม่มีห้อง -> แสดงว่ายังไม่มีห้องแชท', (tester) async {
@@ -173,51 +210,48 @@ void main() {
       expect(find.textContaining('ยังไม่มีห้องแชท'), findsOneWidget);
     });
 
-    testWidgets('แสดงห้องแชท ชื่อหอ ข้อความล่าสุด และจำนวนที่ยังไม่อ่าน', (tester) async {
+    testWidgets('แสดงชื่อ ชื่อหอ ข้อความล่าสุด และจำนวนที่ยังไม่อ่าน', (tester) async {
       loginAs(me);
-      service.conversationList = [
-        {
-          'id': roomId,
-          'other_name': 'เจ้าของหอทดสอบ',
-          'dorm_name': 'หอรวย เธะ',
-          'last_message': 'ว่างครับ',
-          'last_sent_at': '2026-11-09T08:00:00.000Z',
-          'unread': 3,
-        },
-      ];
+      service.conversationList = [conversation(lastMessage: 'ว่างครับ', unread: 3)];
 
       await tester.pumpWidget(app(ChatView(service: service)));
       await tester.pumpAndSettle();
 
       expect(find.text('เจ้าของหอทดสอบ'), findsOneWidget);
-      expect(find.text('หอรวย เธะ • ว่างครับ'), findsOneWidget);
+      expect(find.text('หอรวย เธะ'), findsOneWidget);
+      expect(find.text('ว่างครับ'), findsOneWidget);
       expect(find.text('3'), findsOneWidget); // ป้ายจำนวนยังไม่อ่าน
+    });
+
+    testWidgets('มุมมองเจ้าของหอ: หัวข้อ "แชทผู้เช่า" และขึ้นว่าผู้เช่าสนใจหอไหน', (tester) async {
+      loginAs(me, role: 'seller');
+      service.conversationList = [conversation()];
+
+      await tester.pumpWidget(app(ChatView(asSeller: true, service: service)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('แชทผู้เช่า'), findsOneWidget);
+      expect(find.text('สนใจ หอรวย เธะ'), findsOneWidget);
     });
 
     testWidgets('มีข้อความใหม่ -> รายการอัปเดตเองโดยไม่ต้องรีเฟรช', (tester) async {
       loginAs(me);
-      service.conversationList = [
-        {'id': roomId, 'other_name': 'เจ้าของหอทดสอบ', 'dorm_name': 'หอรวย เธะ', 'last_message': 'เก่า', 'unread': 0},
-      ];
+      service.conversationList = [conversation(lastMessage: 'เก่า')];
       await tester.pumpWidget(app(ChatView(service: service)));
       await tester.pumpAndSettle();
-      expect(find.text('หอรวย เธะ • เก่า'), findsOneWidget);
+      expect(find.text('เก่า'), findsOneWidget);
 
-      service.conversationList = [
-        {'id': roomId, 'other_name': 'เจ้าของหอทดสอบ', 'dorm_name': 'หอรวย เธะ', 'last_message': 'ใหม่', 'unread': 1},
-      ];
+      service.conversationList = [conversation(lastMessage: 'ใหม่', unread: 1)];
       service.serverEmit('conversation_updated', {'conversation_id': roomId});
       await tester.pumpAndSettle();
 
-      expect(find.text('หอรวย เธะ • ใหม่'), findsOneWidget);
+      expect(find.text('ใหม่'), findsOneWidget);
       expect(find.text('1'), findsOneWidget);
     });
 
     testWidgets('กดที่ห้อง -> เปิดหน้าห้องแชทของห้องนั้น', (tester) async {
       loginAs(me);
-      service.conversationList = [
-        {'id': roomId, 'other_name': 'เจ้าของหอทดสอบ', 'dorm_name': 'หอรวย เธะ', 'unread': 0},
-      ];
+      service.conversationList = [conversation()];
       service.history = [message(1, otherUser, 'สวัสดีครับ')];
       await tester.pumpWidget(app(ChatView(service: service)));
       await tester.pumpAndSettle();
@@ -247,12 +281,25 @@ void main() {
       loginAs(me);
       await tester.pumpWidget(app(const AuthView()));
       expect(find.text('ผู้เช่าทดสอบ'), findsOneWidget);
+      expect(find.text('เข้าสู่ระบบเป็น ผู้เช่า'), findsOneWidget);
 
       await tester.tap(find.text('ออกจากระบบ'));
       await tester.pump();
 
       expect(Session.isLoggedIn, isFalse);
       expect(find.widgetWithText(ElevatedButton, 'เข้าสู่ระบบ'), findsOneWidget);
+    });
+
+    testWidgets('แท็บบัญชี (embedded) เปลี่ยนเป็น "เข้าสู่ระบบแล้ว" เองเมื่อ login จากที่อื่น',
+        (tester) async {
+      await tester.pumpWidget(app(const AuthView(embedded: true)));
+      expect(find.widgetWithText(ElevatedButton, 'เข้าสู่ระบบ'), findsOneWidget);
+
+      loginAs(me, role: 'seller');
+      await tester.pump();
+
+      expect(find.text('เข้าสู่ระบบเป็น เจ้าของหอ'), findsOneWidget);
+      expect(find.text('ออกจากระบบ'), findsOneWidget);
     });
   });
 }

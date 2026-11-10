@@ -1,3 +1,5 @@
+ngrok http 3000
+
 node server.js
 node chat_cli.js seller@test.com //login เป็นผู้ขาย
 tenant@test.com / 1234 //login เป็น user รหัสไหนก็ได้

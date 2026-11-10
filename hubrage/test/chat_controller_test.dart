@@ -153,6 +153,7 @@ void main() {
     test('ยังไม่ login -> ไม่โหลดรายการ', () {
       Session.clear();
       final controller = ChatListController(service: service);
+      addTearDown(controller.dispose);
 
       controller.start();
 
@@ -164,6 +165,7 @@ void main() {
         {'id': roomId, 'other_name': 'เจ้าของหอทดสอบ', 'dorm_name': 'หอรวย เธะ', 'unread': 2},
       ];
       final controller = ChatListController(service: service);
+      addTearDown(controller.dispose);
 
       controller.start();
       await flush();
@@ -172,8 +174,46 @@ void main() {
       expect(controller.conversations.single['unread'], 2);
     });
 
+    test('สร้างหน้าก่อน login แล้วค่อย login -> โหลดรายการเอง', () async {
+      // NavigationShell สร้างหน้าแชทไว้ตั้งแต่เปิดแอป (ก่อน login)
+      Session.clear();
+      service.conversationList = [
+        {'id': roomId, 'other_name': 'เจ้าของหอทดสอบ', 'dorm_name': 'หอรวย เธะ', 'unread': 0},
+      ];
+      final controller = ChatListController(service: service);
+      addTearDown(controller.dispose);
+      controller.start();
+      expect(service.fetchConversationsCount, 0);
+
+      Session.token = 'fake-token';
+      Session.userId = me;
+      Session.loggedIn.value = true; // เหมือนที่ AuthService.login ทำ
+      await flush();
+
+      expect(service.fetchConversationsCount, 1);
+      expect(controller.conversations.length, 1);
+    });
+
+    test('logout -> ล้างรายการ และเลิกฟังข้อความใหม่', () async {
+      Session.loggedIn.value = true;
+      service.conversationList = [
+        {'id': roomId, 'other_name': 'เจ้าของหอทดสอบ', 'dorm_name': 'หอรวย เธะ', 'unread': 0},
+      ];
+      final controller = ChatListController(service: service);
+      addTearDown(controller.dispose);
+      controller.start();
+      await flush();
+      expect(controller.conversations, isNotEmpty);
+
+      Session.clear();
+
+      expect(controller.conversations, isEmpty);
+      expect(service.handlers.containsKey('conversation_updated'), isFalse);
+    });
+
     test('มีข้อความใหม่ (conversation_updated) -> โหลดรายการใหม่เอง', () async {
       final controller = ChatListController(service: service);
+      addTearDown(controller.dispose);
       controller.start();
       await flush();
       expect(service.fetchConversationsCount, 1);

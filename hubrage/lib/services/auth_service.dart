@@ -19,29 +19,33 @@ class AuthService {
       'ngrok-skip-browser-warning': 'true',
     };
     final body = jsonEncode({'email': email, 'password': password});
+
+    http.Response res;
     try {
       final request = client == null
           ? http.post(url, headers: headers, body: body)
           : client.post(url, headers: headers, body: body);
-      final res = await request.timeout(const Duration(seconds: 10));
-
-      if (res.statusCode == 401) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
-      if (res.statusCode == 403) return 'บัญชีนี้ถูกระงับ';
-      if (res.statusCode != 200) {
-        return 'เข้าสู่ระบบไม่สำเร็จ (${res.statusCode}) ที่ ${ApiConfig.baseUrl}/api/login';
-      }
-
-      final data = jsonDecode(res.body);
-      Session.token = data['token'];
-      Session.userId = data['id'];
-      Session.role = data['role'];
-      Session.fullName = data['full_name'] ?? '';
-
-      if (connectSocket) ChatService.instance.connect(); // login แล้วต่อ socket ทันที
-      return null;
+      res = await request.timeout(const Duration(seconds: 10));
     } catch (e) {
       return 'เชื่อมต่อ ${ApiConfig.baseUrl} ไม่ได้ (เปิด server / ngrok หรือยัง?)';
     }
+
+    if (res.statusCode == 401) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+    if (res.statusCode == 403) return 'บัญชีนี้ถูกระงับ';
+    if (res.statusCode != 200) {
+      return 'เข้าสู่ระบบไม่สำเร็จ (${res.statusCode}) ที่ ${ApiConfig.baseUrl}/api/login';
+    }
+
+    if (Session.isLoggedIn) logout(); // login เป็นคนใหม่ = ออกจากบัญชีเดิมก่อน
+    final data = jsonDecode(res.body);
+    Session.token = data['token'];
+    Session.userId = data['id'];
+    Session.role = data['role'];
+    Session.fullName = data['full_name'] ?? '';
+
+    if (connectSocket) ChatService.instance.connect(); // ต่อ socket ก่อน แล้วค่อยแจ้งหน้าอื่น
+    Session.loggedIn.value = true; // หน้าแชท/บัญชีที่ฟังอยู่จะอัปเดตเอง
+    return null;
   }
 
   static void logout() {
