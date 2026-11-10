@@ -54,6 +54,50 @@ class AdminConsoleState extends ChangeNotifier {
     },
   ];
 
+  /// รีวิวจากผู้เช่า (ข้อมูลตัวอย่าง) — status: visible | hidden
+  final List<Map<String, dynamic>> reviews = [
+    {
+      'id': 'review_001',
+      'dormId': 'dorm_1',
+      'dormName': 'หอรวย เธะ',
+      'author': 'คุณกิตติ',
+      'rating': 5,
+      'comment': 'ห้องสะอาด เจ้าของใจดี เดินทางสะดวกมากครับ',
+      'date': '08 พ.ย. 2026',
+      'status': 'visible',
+    },
+    {
+      'id': 'review_002',
+      'dormId': 'dorm_1',
+      'dormName': 'หอรวย เธะ',
+      'author': 'คุณนภา',
+      'rating': 2,
+      'comment': 'น้ำไหลเบาช่วงเย็น และ Wi-Fi หลุดบ่อย',
+      'date': '05 พ.ย. 2026',
+      'status': 'visible',
+    },
+    {
+      'id': 'review_003',
+      'dormId': 'dorm_2',
+      'dormName': 'หออิสลาม แกรนด์',
+      'author': 'ผู้ใช้นิรนาม',
+      'rating': 1,
+      'comment': 'ข้อความไม่เหมาะสม (ตัวอย่างรีวิวที่ถูกรายงาน)',
+      'date': '03 พ.ย. 2026',
+      'status': 'visible',
+    },
+    {
+      'id': 'review_004',
+      'dormId': 'dorm_3',
+      'dormName': 'HU 24 อพาร์ตเมนต์',
+      'author': 'คุณปรีชา',
+      'rating': 4,
+      'comment': 'ห้องกว้าง มีลิฟต์ ราคาสมเหตุสมผล',
+      'date': '01 พ.ย. 2026',
+      'status': 'visible',
+    },
+  ];
+
   final List<Map<String, dynamic>> dormRequests = [];
 
   final Set<String> temporarilyClosedDorms = {};
@@ -87,6 +131,7 @@ class AdminConsoleState extends ChangeNotifier {
     required int priceMax,
     required List<String> amenities,
     required String imageUrl,
+    List<dynamic> images = const [], // รูปเพิ่มเติม: String (ลิงก์) หรือ Uint8List
     required List<Map<String, String>> documents,
   }) {
     dormRequests.insert(0, {
@@ -104,6 +149,7 @@ class AdminConsoleState extends ChangeNotifier {
       'priceMax': priceMax,
       'amenities': amenities,
       'imageUrl': imageUrl,
+      'images': images,
       'documents': documents,
       'status': 'pending',
       'submittedAt': 'ส่งคำขอเมื่อสักครู่',
@@ -114,6 +160,19 @@ class AdminConsoleState extends ChangeNotifier {
   void reviewDormRequest(String requestId, {required bool approve}) {
     final request = dormRequests.firstWhere((item) => item['id'] == requestId);
     request['status'] = approve ? 'approved' : 'rejected';
+    notifyListeners();
+  }
+
+  /// อัปเดตรูปของหอที่ส่งคำขอไว้ (เมื่อเจ้าของแก้ไขประกาศ) เพื่อให้ผู้เช่าเห็นรูปล่าสุด
+  void updateDormMedia(
+    String dormId, {
+    required String imageUrl,
+    required List<dynamic> images,
+  }) {
+    for (final request in dormRequests.where((r) => r['dormId'] == dormId)) {
+      request['imageUrl'] = imageUrl;
+      request['images'] = images;
+    }
     notifyListeners();
   }
 
@@ -147,6 +206,27 @@ class AdminConsoleState extends ChangeNotifier {
   bool isSellerSuspended(String sellerId) => sellers.any(
     (seller) => seller['id'] == sellerId && seller['status'] == 'suspended',
   );
+
+  // ───────────── จัดการรีวิว (แอดมิน) ─────────────
+
+  /// รีวิวที่ผู้เช่าเห็นได้ของหอนั้น (ไม่รวมที่ถูกซ่อน)
+  List<Map<String, dynamic>> visibleReviewsFor(String dormId) => reviews
+      .where((r) => r['dormId'] == dormId && r['status'] == 'visible')
+      .toList();
+
+  int get hiddenReviewCount =>
+      reviews.where((r) => r['status'] == 'hidden').length;
+
+  void setReviewHidden(String reviewId, bool hidden) {
+    final review = reviews.firstWhere((r) => r['id'] == reviewId);
+    review['status'] = hidden ? 'hidden' : 'visible';
+    notifyListeners();
+  }
+
+  void deleteReview(String reviewId) {
+    reviews.removeWhere((r) => r['id'] == reviewId);
+    notifyListeners();
+  }
 
   void recordDormView(String dormId) {
     dormViews[dormId] = (dormViews[dormId] ?? 0) + 1;

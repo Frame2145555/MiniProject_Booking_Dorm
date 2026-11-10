@@ -125,16 +125,33 @@ class ChatListController extends ChangeNotifier {
   Function()? _removeListener;
   bool _disposed = false;
 
+  /// เรียกครั้งเดียวตอนสร้างหน้า (หน้าอาจถูกสร้างตั้งแต่ก่อน login)
   void start() {
-    if (!Session.isLoggedIn) return;
+    Session.loggedIn.addListener(_onSessionChanged);
+    _onSessionChanged();
+  }
+
+  /// login / logout -> เริ่มฟังห้องแชทของคนใหม่ หรือล้างรายการ
+  void _onSessionChanged() {
+    if (_disposed) return;
+    _removeListener?.call();
+    _removeListener = null;
+    conversations = [];
+    loading = true;
+    if (!Session.isLoggedIn) {
+      notifyListeners();
+      return;
+    }
     // มีข้อความใหม่ในห้องไหนก็ตาม server จะส่ง 'conversation_updated' มา -> โหลดรายการใหม่
     _removeListener = _service.listen('conversation_updated', (_) => load());
+    notifyListeners();
     load();
   }
 
   Future<void> load() async {
+    if (!Session.isLoggedIn) return;
     final list = await _service.fetchConversations();
-    if (_disposed) return;
+    if (_disposed || !Session.isLoggedIn) return; // logout ระหว่างรอ = ทิ้งผลลัพธ์
     conversations = list;
     loading = false;
     notifyListeners();
@@ -143,6 +160,7 @@ class ChatListController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    Session.loggedIn.removeListener(_onSessionChanged);
     _removeListener?.call();
     super.dispose();
   }

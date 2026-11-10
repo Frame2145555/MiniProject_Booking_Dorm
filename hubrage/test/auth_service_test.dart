@@ -46,6 +46,7 @@ void main() {
     expect(Session.userId, 1);
     expect(Session.role, 'tenant');
     expect(Session.fullName, 'ผู้เช่าทดสอบ');
+    expect(Session.loggedIn.value, isTrue); // หน้าอื่นที่ฟังอยู่จะรู้ว่า login แล้ว
   });
 
   test('รหัสผิด (401): ได้ข้อความ error และยังไม่ login', () async {
@@ -94,5 +95,6 @@ void main() {
 
     AuthService.logout();
     expect(Session.isLoggedIn, isFalse);
+    expect(Session.loggedIn.value, isFalse);
   });
 }
