@@ -1,4 +1,15 @@
-const BASE_URL = 'http://localhost:3000/api/owner';
+const BASE_URL = 'http://localhost:3001/api/owner';
+let ownerToken = '';
+
+function ownerFetch(url, options = {}) {
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${ownerToken}`
+    }
+  });
+}
 
 // ANSI Colors สำหรับการแสดงผล Terminal
 const colors = {
@@ -30,15 +41,32 @@ async function runOwnerApiTests() {
   let createdRoomId = null;
 
   try {
+    logTest('0. POST /api/owner/login (เข้าสู่ระบบเจ้าของหอ)');
+    const resLogin = await fetch(`${BASE_URL}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: process.env.OWNER_EMAIL || 'seller@test.com',
+        password: process.env.OWNER_PASSWORD || '1234'
+      })
+    });
+    const dataLogin = await resLogin.json();
+    if (!resLogin.ok || !dataLogin.success || !dataLogin.token) {
+      logResult(false, 'เข้าสู่ระบบเจ้าของหอไม่สำเร็จ', dataLogin);
+      return;
+    }
+    ownerToken = dataLogin.token;
+    logResult(true, `เข้าสู่ระบบเป็น ${dataLogin.full_name}`);
+
     // 1. GET Dashboard Stats
     logTest('1. GET /api/owner/dashboard/stats (ดึงสถิติภาพรวม)');
-    const resStats = await fetch(`${BASE_URL}/dashboard/stats`);
+    const resStats = await ownerFetch(`${BASE_URL}/dashboard/stats`);
     const dataStats = await resStats.json();
     logResult(resStats.ok && dataStats.success, 'ดึงข้อมูล Dashboard สำเร็จ', dataStats.data);
 
     // 2. GET Owner Dorms List
     logTest('2. GET /api/owner/dorms (ดึงรายการหอพักทั้งหมดของเจ้าของ)');
-    const resDorms = await fetch(`${BASE_URL}/dorms`);
+    const resDorms = await ownerFetch(`${BASE_URL}/dorms`);
     const dataDorms = await resDorms.json();
     logResult(resDorms.ok && dataDorms.success, `พบหอพักจำนวน ${dataDorms.count} แห่ง`);
 
@@ -63,7 +91,7 @@ async function runOwnerApiTests() {
         }
       ]
     };
-    const resCreateDorm = await fetch(`${BASE_URL}/dorms`, {
+    const resCreateDorm = await ownerFetch(`${BASE_URL}/dorms`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newDormPayload)
@@ -88,7 +116,7 @@ async function runOwnerApiTests() {
       priceMax: 7500,
       imageUrl: 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5'
     };
-    const resUpdateDorm = await fetch(`${BASE_URL}/dorms/${targetDormId}`, {
+    const resUpdateDorm = await ownerFetch(`${BASE_URL}/dorms/${targetDormId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updateDormPayload)
@@ -98,7 +126,7 @@ async function runOwnerApiTests() {
 
     // 5. PATCH Toggle Dorm Visibility (Close Temporarily)
     logTest(`5. PATCH /api/owner/dorms/${targetDormId}/visibility (ปิดประกาศชั่วคราว)`);
-    const resVisibility = await fetch(`${BASE_URL}/dorms/${targetDormId}/visibility`, {
+    const resVisibility = await ownerFetch(`${BASE_URL}/dorms/${targetDormId}/visibility`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isClosed: true })
@@ -115,7 +143,7 @@ async function runOwnerApiTests() {
       floor: 2,
       status: 'ว่าง'
     };
-    const resAddRoom = await fetch(`${BASE_URL}/dorms/${targetDormId}/rooms`, {
+    const resAddRoom = await ownerFetch(`${BASE_URL}/dorms/${targetDormId}/rooms`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newRoomPayload)
@@ -131,7 +159,7 @@ async function runOwnerApiTests() {
     // 7. PATCH Update Room Status
     const targetRoomId = createdRoomId || 101;
     logTest(`7. PATCH /api/owner/rooms/${targetRoomId}/status (อัปเดตสถานะห้องพัก)`);
-    const resRoomStatus = await fetch(`${BASE_URL}/rooms/${targetRoomId}/status`, {
+    const resRoomStatus = await ownerFetch(`${BASE_URL}/rooms/${targetRoomId}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'มีผู้เช่า' })
@@ -141,7 +169,7 @@ async function runOwnerApiTests() {
 
     // 8. GET Visit Requests
     logTest('8. GET /api/owner/visit-requests (ดึงรายการคำขอนัดดูห้องพัก)');
-    const resVisits = await fetch(`${BASE_URL}/visit-requests`);
+    const resVisits = await ownerFetch(`${BASE_URL}/visit-requests`);
     const dataVisits = await resVisits.json();
     logResult(resVisits.ok && dataVisits.success, `พบคำขอนัดดูห้องจำนวน ${dataVisits.count} รายการ`);
 

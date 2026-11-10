@@ -21,12 +21,14 @@ class DormModel {
 }
 
 class RoomDetailModel {
+  final int? id;
   final String roomNumber;
   final String roomType;
   final double price;
   final String status; // 'ว่าง', 'มีผู้เช่า', 'ปรับปรุง'
 
   RoomDetailModel({
+    this.id,
     required this.roomNumber,
     required this.roomType,
     required this.price,

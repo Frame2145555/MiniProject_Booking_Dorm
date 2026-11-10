@@ -4,6 +4,7 @@ require('dotenv').config();
 
 const ownerRoutes = require('./Troutes/ownerRoutes');
 const tenantRoutes = require('./Troutes/tenantRoutes'); // [เพิ่มส่วนนี้]
+const authRoutes = require('./Troutes/authRoutes');
 
 const app = express();
 
@@ -14,6 +15,7 @@ app.use(express.json());
 // Routes Module
 app.use('/api/owner', ownerRoutes);
 app.use('/api/tenant', tenantRoutes); // [เพิ่มส่วนนี้]
+app.use('/api', authRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {
@@ -21,7 +23,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Dorm Master Backend API running on port ${PORT}`);
 });

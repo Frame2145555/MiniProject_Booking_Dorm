@@ -1,9 +1,11 @@
 const express = require('express');
 const router = express.Router();
+const authController = require('../Tcontrollers/authController');
 const ownerController = require('../Tcontrollers/ownerController');
 const { requireAuth, requireOwnerRole } = require('../Tmiddleware/auth');
 
-// กำหนดให้ทุก Route ของ Owner ต้องผ่านการตรวจสอบ Auth และ Role
+router.post('/login', authController.loginOwner);
+
 router.use(requireAuth, requireOwnerRole);
 
 // Dashboard Overview

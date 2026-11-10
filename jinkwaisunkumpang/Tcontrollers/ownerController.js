@@ -77,7 +77,8 @@ exports.getOwnerDorms = async (req, res) => {
         d.latitude,
         d.longitude,
         d.listing_status,
-        d.approval_status,
+        d.approval_status AS approvalStatus,
+        d.listing_status AS listingStatus,
         COUNT(DISTINCT v.id) AS viewCount
        FROM dorms d
        LEFT JOIN dorm_view_events v ON d.id = v.dorm_id
