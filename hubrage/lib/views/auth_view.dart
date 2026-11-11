@@ -21,10 +21,24 @@ class _AuthViewState extends State<AuthView> {
   final _passwordController = TextEditingController();
   bool _loading = false;
 
+  // ฟอร์มสมัครสมาชิก
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _regEmailController = TextEditingController();
+  final _regPasswordController = TextEditingController();
+  String _regRole = 'tenant'; // 'tenant' | 'seller'
+  bool _registering = false;
+
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _phoneController.dispose();
+    _regEmailController.dispose();
+    _regPasswordController.dispose();
     super.dispose();
   }
 
@@ -206,6 +220,145 @@ class _AuthViewState extends State<AuthView> {
         ],
       );
 
+  Future<void> _register(TabController? tabs) async {
+    final fullName = [_firstNameController.text, _lastNameController.text]
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .join(' ');
+    final email = _regEmailController.text.trim();
+    final password = _regPasswordController.text;
+    if (fullName.isEmpty || email.isEmpty || password.isEmpty) {
+      _toast('กรุณากรอกชื่อ อีเมล และรหัสผ่าน');
+      return;
+    }
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$').hasMatch(email)) {
+      _toast('รูปแบบอีเมลไม่ถูกต้อง');
+      return;
+    }
+    if (password.length < 8) {
+      _toast('รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร');
+      return;
+    }
+    setState(() => _registering = true);
+    final error = await AuthService.register(
+      email: email,
+      password: password,
+      fullName: fullName,
+      phone: _phoneController.text,
+      role: _regRole,
+    );
+    if (!mounted) return;
+    setState(() => _registering = false);
+    if (error != null) {
+      _toast(error);
+      return;
+    }
+    _firstNameController.clear();
+    _lastNameController.clear();
+    _phoneController.clear();
+    _regEmailController.clear();
+    _regPasswordController.clear();
+    _toast('สมัครสมาชิกสำเร็จ');
+    tabs?.animateTo(0); // กลับไปแท็บแรก (จะเห็นการ์ดผู้ใช้ที่ login แล้ว)
+    if (!widget.embedded && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Widget _roleChip(String value, String label, IconData icon) {
+    final selected = _regRole == value;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _regRole = value),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.ink : Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: selected ? AppShadows.dark : AppShadows.chip,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: selected ? Colors.white : AppColors.ink),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : AppColors.ink,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _registerForm() => Padding(
+        padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          child: Builder(
+            // Builder: เพื่อเข้าถึง TabController ของ DefaultTabController ที่อยู่ด้านบน
+            builder: (tabContext) => Column(
+              children: [
+                Row(
+                  children: [
+                    _roleChip('tenant', 'ผู้เช่า', Icons.person_search_rounded),
+                    const SizedBox(width: 10),
+                    _roleChip('seller', 'เจ้าของหอ', Icons.storefront_rounded),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _firstNameController,
+                  textInputAction: TextInputAction.next,
+                  decoration: _decoration('ชื่อจริง (First Name)'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _lastNameController,
+                  textInputAction: TextInputAction.next,
+                  decoration: _decoration('นามสกุล (Last Name)'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
+                  decoration: _decoration('เบอร์โทรศัพท์ (Phone) — ไม่บังคับ'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _regEmailController,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  decoration: _decoration('อีเมล (E-mail)'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _regPasswordController,
+                  obscureText: true,
+                  onSubmitted: (_) =>
+                      _register(DefaultTabController.maybeOf(tabContext)),
+                  decoration: _decoration('รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)'),
+                ),
+                const SizedBox(height: 24),
+                _primaryButton(
+                  'ยืนยันสมัครสมาชิก',
+                  loading: _registering,
+                  onPressed: () =>
+                      _register(DefaultTabController.maybeOf(tabContext)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
   Widget _tabViews() => TabBarView(
         children: [
           Padding(
@@ -217,26 +370,7 @@ class _AuthViewState extends State<AuthView> {
                   Session.isLoggedIn ? _loggedInCard() : _loginForm(),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  TextField(decoration: _decoration('ชื่อจริง (First Name)')),
-                  const SizedBox(height: 12),
-                  TextField(decoration: _decoration('นามสกุล (Last Name)')),
-                  const SizedBox(height: 12),
-                  TextField(decoration: _decoration('เบอร์โทรศัพท์ (Phone)')),
-                  const SizedBox(height: 12),
-                  TextField(decoration: _decoration('อีเมล (E-mail)')),
-                  const SizedBox(height: 12),
-                  TextField(obscureText: true, decoration: _decoration('รหัสผ่าน')),
-                  const SizedBox(height: 24),
-                  _primaryButton('ยืนยันสมัครสมาชิก', onPressed: () {}),
-                ],
-              ),
-            ),
-          ),
+          _registerForm(),
         ],
       );
 

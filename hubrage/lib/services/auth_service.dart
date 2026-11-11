@@ -12,13 +12,50 @@ class AuthService {
     String password, {
     http.Client? client,
     bool connectSocket = true,
+  }) =>
+      _authenticate(
+        '/api/login',
+        {'email': email, 'password': password},
+        client: client,
+        connectSocket: connectSocket,
+      );
+
+  /// สมัครสมาชิก แล้ว login ให้เลย (server ตอบ token ชุดเดียวกับ login)
+  /// [role] = 'tenant' (ผู้เช่า) หรือ 'seller' (เจ้าของหอ) — คืน null ถ้าสำเร็จ ไม่งั้นคืนข้อความ error
+  static Future<String?> register({
+    required String email,
+    required String password,
+    required String fullName,
+    String? phone,
+    String role = 'tenant',
+    http.Client? client,
+    bool connectSocket = true,
+  }) =>
+      _authenticate(
+        '/api/register',
+        {
+          'email': email,
+          'password': password,
+          'full_name': fullName,
+          if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
+          'role': role,
+        },
+        client: client,
+        connectSocket: connectSocket,
+      );
+
+  static Future<String?> _authenticate(
+    String path,
+    Map<String, dynamic> payload, {
+    http.Client? client,
+    required bool connectSocket,
   }) async {
-    final url = Uri.parse('${ApiConfig.baseUrl}/api/login');
+    final url = Uri.parse('${ApiConfig.baseUrl}$path');
     final headers = {
       'Content-Type': 'application/json',
       'ngrok-skip-browser-warning': 'true',
     };
-    final body = jsonEncode({'email': email, 'password': password});
+    final body = jsonEncode(payload);
 
     http.Response res;
     try {
@@ -32,8 +69,12 @@ class AuthService {
 
     if (res.statusCode == 401) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
     if (res.statusCode == 403) return 'บัญชีนี้ถูกระงับ';
-    if (res.statusCode != 200) {
-      return 'เข้าสู่ระบบไม่สำเร็จ (${res.statusCode}) ที่ ${ApiConfig.baseUrl}/api/login';
+    // 400 ข้อมูลไม่ครบ/ไม่ถูกต้อง, 409 อีเมลซ้ำ, 429 ลองบ่อยเกินไป -> server ส่งข้อความไทยมาให้แล้ว
+    if (res.statusCode == 400 || res.statusCode == 409 || res.statusCode == 429) {
+      return _serverMessage(res) ?? 'ข้อมูลไม่ถูกต้อง (${res.statusCode})';
+    }
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      return 'เข้าสู่ระบบไม่สำเร็จ (${res.statusCode}) ที่ ${ApiConfig.baseUrl}$path';
     }
 
     if (Session.isLoggedIn) logout(); // login เป็นคนใหม่ = ออกจากบัญชีเดิมก่อน
@@ -46,6 +87,15 @@ class AuthService {
     if (connectSocket) ChatService.instance.connect(); // ต่อ socket ก่อน แล้วค่อยแจ้งหน้าอื่น
     Session.loggedIn.value = true; // หน้าแชท/บัญชีที่ฟังอยู่จะอัปเดตเอง
     return null;
+  }
+
+  static String? _serverMessage(http.Response res) {
+    try {
+      final msg = jsonDecode(res.body)['error'];
+      return msg is String && msg.isNotEmpty ? msg : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   static void logout() {

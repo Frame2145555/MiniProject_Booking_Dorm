@@ -33,6 +33,9 @@ class _SearchViewState extends State<SearchView> {
   bool _isPriceFilterActive = false;
   final Set<String> _selectedAmenities = {};
 
+  // การเรียงลำดับ (ค่าเริ่มต้น = ลำดับเดิมของแคตตาล็อก)
+  _SortOption _sort = _SortOption.recommended;
+
   // แผงกรอง (แสดงในหน้าค้นหาเอง ไม่ใช้ modal เพื่อให้ header ด้านบนไม่ถูกบัง/ไม่มืด)
   _FilterPanel _panel = _FilterPanel.none;
   RangeValues _tempRange = const RangeValues(3000, 12000);
@@ -47,7 +50,7 @@ class _SearchViewState extends State<SearchView> {
     final query = _searchController.text.trim().toLowerCase();
     final dorms = DormCatalog.visibleDorms(widget.consoleState);
 
-    return dorms.where((dorm) {
+    final result = dorms.where((dorm) {
       final title = dorm['title'].toString().toLowerCase();
       final location = dorm['location'].toString().toLowerCase();
 
@@ -71,6 +74,100 @@ class _SearchViewState extends State<SearchView> {
 
       return matchesQuery && matchesPrice && matchesAmenities;
     }).toList();
+    return _sortDorms(result);
+  }
+
+  /// เรียงผลลัพธ์ตาม [_sort] — ค่าที่ไม่มีข้อมูล (เช่น ยังไม่มีคะแนน) ไปอยู่ท้ายสุด
+  /// และใช้ลำดับเดิมเป็นตัวตัดสินเมื่อเท่ากัน (เรียงแบบ stable)
+  List<Map<String, dynamic>> _sortDorms(List<Map<String, dynamic>> list) {
+    if (_sort == _SortOption.recommended) return list;
+
+    num minPrice(Map<String, dynamic> d) =>
+        (d['minPrice'] as num?) ?? (d['maxPrice'] as num?) ?? double.infinity;
+    num maxPrice(Map<String, dynamic> d) =>
+        (d['maxPrice'] as num?) ?? (d['minPrice'] as num?) ?? -1;
+    double rating(Map<String, dynamic> d) =>
+        double.tryParse(d['rating']?.toString() ?? '') ?? -1;
+    int views(Map<String, dynamic> d) =>
+        widget.consoleState?.dormViews[d['id'].toString()] ?? 0;
+
+    int compare(Map<String, dynamic> a, Map<String, dynamic> b) {
+      switch (_sort) {
+        case _SortOption.priceAsc:
+          return minPrice(a).compareTo(minPrice(b));
+        case _SortOption.priceDesc:
+          return maxPrice(b).compareTo(maxPrice(a));
+        case _SortOption.rating:
+          return rating(b).compareTo(rating(a));
+        case _SortOption.views:
+          return views(b).compareTo(views(a));
+        case _SortOption.name:
+          return a['title'].toString().toLowerCase().compareTo(
+                b['title'].toString().toLowerCase(),
+              );
+        case _SortOption.recommended:
+          return 0;
+      }
+    }
+
+    final indexed = list.asMap().entries.toList()
+      ..sort((a, b) {
+        final c = compare(a.value, b.value);
+        return c != 0 ? c : a.key.compareTo(b.key);
+      });
+    return indexed.map((e) => e.value).toList();
+  }
+
+  void _showSortPanel() {
+    _setHeaderVisible(true);
+    setState(() => _panel = _FilterPanel.sort);
+  }
+
+  Widget _buildSortPanel() {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'เรียงลำดับ',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: _closePanel,
+                ),
+              ],
+            ),
+            ..._SortOption.values.map(
+              (option) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  option.label,
+                  style: TextStyle(
+                    fontWeight:
+                        option == _sort ? FontWeight.w800 : FontWeight.w500,
+                  ),
+                ),
+                trailing: option == _sort
+                    ? const Icon(Icons.check_rounded, color: AppColors.ink)
+                    : null,
+                onTap: () => setState(() {
+                  _sort = option;
+                  _panel = _FilterPanel.none;
+                }),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _setHeaderVisible(bool visible) =>
@@ -545,6 +642,15 @@ class _SearchViewState extends State<SearchView> {
                     onTap: _showPriceRangeModal,
                   ),
                   const SizedBox(width: 10),
+                  _filterPill(
+                    icon: Icons.swap_vert_rounded,
+                    label: _sort == _SortOption.recommended
+                        ? 'เรียงตาม'
+                        : _sort.label,
+                    selected: _sort != _SortOption.recommended,
+                    onTap: _showSortPanel,
+                  ),
+                  const SizedBox(width: 10),
                   ..._selectedAmenities.map((amenity) {
                     return Padding(
                       padding: const EdgeInsets.only(right: 10),
@@ -700,9 +806,11 @@ class _SearchViewState extends State<SearchView> {
                           BorderRadius.vertical(top: Radius.circular(28)),
                     ),
                     clipBehavior: Clip.antiAlias,
-                    child: _panel == _FilterPanel.price
-                        ? _buildPricePanel()
-                        : _buildAmenitiesPanel(maxH * 0.85),
+                    child: switch (_panel) {
+                      _FilterPanel.price => _buildPricePanel(),
+                      _FilterPanel.sort => _buildSortPanel(),
+                      _ => _buildAmenitiesPanel(maxH * 0.85),
+                    },
                   ),
                 ),
               ],
@@ -714,4 +822,16 @@ class _SearchViewState extends State<SearchView> {
   }
 }
 
-enum _FilterPanel { none, price, amenities }
+enum _FilterPanel { none, price, amenities, sort }
+
+enum _SortOption {
+  recommended('แนะนำ (ค่าเริ่มต้น)'),
+  priceAsc('ราคา: ต่ำ → สูง'),
+  priceDesc('ราคา: สูง → ต่ำ'),
+  rating('คะแนนสูงสุด'),
+  views('ยอดเข้าชมมากที่สุด'),
+  name('ชื่อหอพัก ก-ฮ / A-Z');
+
+  final String label;
+  const _SortOption(this.label);
+}

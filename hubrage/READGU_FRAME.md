@@ -8,7 +8,9 @@ flutter test test/auth_service_test.dart --reporter expanded
 flutter test test/views_test.dart --reporter expanded
 flutter test test/chat_logic_test.dart --reporter expanded
 
-flutter test --reporter expanded
+flutter test test/dorm_catalog_test.dart --reporter expanded
+flutter test test/search_view_test.dart --reporter expanded
+flutter test test/auth_view_test.dart --reporter expanded
 
 เปิด `node server.js` ไว้ แล้วอีก terminal:
 ```bash
