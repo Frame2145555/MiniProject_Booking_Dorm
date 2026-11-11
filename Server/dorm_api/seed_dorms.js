@@ -1,5 +1,6 @@
 // ใส่หอพักตัวอย่างลง MySQL ให้ตรงกับหอ mock ในแอป (DormCatalog: dorm_1 - dorm_4)
 // + สร้างบัญชีเจ้าของหอแต่ละหอ (รหัสผ่าน 1234) เพื่อให้ผู้เช่ากดแชทได้ทุกหอ
+// + ห้องพักหอละ 3 ห้อง (ไว้ทดสอบการจอง) + บัญชีแอดมิน admin@test.com (รหัส 1234)
 // วิธีรัน: node seed_dorms.js   (รันซ้ำได้ ไม่สร้างข้อมูลซ้ำ จะอัปเดตทับของเดิม)
 const argon2 = require('@node-rs/argon2');
 const mysql = require('mysql2/promise');
@@ -65,10 +66,32 @@ const main = async () => {
              SELECT ?, id FROM amenities WHERE name IN (?)`,
             [d.id, d.amenities]
         );
+
+        // 4. ห้องพัก 3 ห้อง (มีอยู่แล้วไม่สร้างซ้ำ ไม่แตะสถานะเดิม)
+        const rooms = [
+            ['101', 'ห้องพัดลม', d.priceMin],
+            ['102', 'ห้องแอร์', Math.round((d.priceMin + d.priceMax) / 2)],
+            ['201', 'ห้องแอร์ (ใหญ่)', d.priceMax],
+        ];
+        for (const [number, type, price] of rooms) {
+            await db.query(
+                `INSERT IGNORE INTO rooms (dorm_id, room_number, room_type, price_per_month, floor, status)
+                 VALUES (?, ?, ?, ?, ?, 'available')`,
+                [d.id, number, type, price, Number(number[0])]
+            );
+        }
         console.log(`dorm_${d.id} ${d.name}  ->  เจ้าของ ${d.owner.email} (user id ${owner.id})`);
     }
 
-    console.log('\nเสร็จแล้ว: หอ ' + DORMS.length + ' หอ / เจ้าของหอทุกคนรหัสผ่าน 1234');
+    // 5. บัญชีแอดมิน (สมัครผ่านแอปเป็น admin ไม่ได้ ต้องสร้างจากตรงนี้)
+    await db.query(
+        `INSERT INTO users (email, password, full_name, role) VALUES ('admin@test.com', ?, 'ผู้ดูแลระบบ', 'admin')
+         ON DUPLICATE KEY UPDATE password = VALUES(password), role = 'admin', account_status = 'active'`,
+        [hash]
+    );
+    console.log('แอดมิน -> admin@test.com');
+
+    console.log('\nเสร็จแล้ว: หอ ' + DORMS.length + ' หอ (หอละ 3 ห้อง) / ทุกบัญชีรหัสผ่าน 1234');
     await db.end();
 };
 

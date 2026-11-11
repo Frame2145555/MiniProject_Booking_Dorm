@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../services/session.dart';
+import '../services/tenant_api_service.dart';
 import 'admin_console_state.dart';
 
 /// ข้อมูลหอพักตัวอย่างที่ผู้เช่าเห็น + ตัวช่วยรวมหอที่แอดมินอนุมัติแล้ว
@@ -67,8 +69,15 @@ class DormCatalog {
     {'label': 'รปภ. 24ชม.', 'icon': Icons.security},
   ];
 
-  /// หอทั้งหมดที่ผู้เช่าควรเห็น (ตัดหอที่ปิดประกาศ/ยังไม่อนุมัติ/ถูกระงับออก)
+  /// รายการหอจริงจาก MySQL (GET /api/tenant/dorms) -> หน้าแรก / ค้นหา / รายการโปรด ฟังตัวนี้
+  static final DormStore live = DormStore();
+
+  /// หอทั้งหมดที่ผู้เช่าควรเห็น
+  /// - โหลดจาก server ได้แล้ว -> ใช้ข้อมูลจริง (server กรองหอที่ยังไม่อนุมัติ/ปิดประกาศให้แล้ว)
+  /// - ยังไม่เคยโหลดได้ (ไม่มี server) -> ใช้หอตัวอย่างเดิม ([useMockWhenOffline] = true)
   static List<Map<String, dynamic>> visibleDorms(AdminConsoleState? state) {
+    if (live.hasServerData || !live.useMockWhenOffline) return live.dorms;
+
     final approvedOwnerDorms = (state?.approvedDorms ?? const []).map(
       (request) => <String, dynamic>{
         ...request,
@@ -84,5 +93,95 @@ class DormCatalog {
     return dorms
         .where((dorm) => !(state?.isDormClosed(dorm['id'].toString()) ?? false))
         .toList();
+  }
+
+  /// 5000 -> '5,000'
+  static String money(Object? value) {
+    final n = num.tryParse(value?.toString() ?? '')?.round() ?? 0;
+    return n.toString().replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (_) => ',',
+    );
+  }
+
+  /// แปลงหอจาก API ให้เป็นรูปแบบเดียวกับหอตัวอย่าง (หน้าเดิมใช้ต่อได้โดยไม่ต้องแก้)
+  static Map<String, dynamic> fromApi(Map<String, dynamic> d) {
+    final min = num.tryParse('${d['priceMin']}')?.round() ?? 0;
+    final max = num.tryParse('${d['priceMax']}')?.round() ?? min;
+    return {
+      ...d,
+      'id': '${d['id']}', // ใช้เป็น key ในแอป (หน้ารายละเอียดแปลงกลับเป็นเลขเอง)
+      'dbId': int.tryParse('${d['id']}'),
+      'title': d['title']?.toString() ?? '',
+      'location': d['location']?.toString() ?? '',
+      'phone': d['phone']?.toString() ?? '',
+      'price': '${money(min)} - ${money(max)}',
+      'minPrice': min,
+      'maxPrice': max,
+      'rating': '${d['rating'] ?? '-'}',
+      'imageUrl': d['imageUrl']?.toString() ?? '',
+      'tags': List<String>.from((d['tags'] as List?) ?? const []),
+      'isFavorite': d['isFavorite'] == 1 || d['isFavorite'] == true,
+    };
+  }
+}
+
+/// เก็บรายการหอที่โหลดจาก server (ChangeNotifier -> หน้าที่ฟังอยู่ rebuild เอง)
+/// โหลดใหม่อัตโนมัติเมื่อ login / logout (เพื่อให้รู้ว่าหอไหนเป็นหอโปรดของคนที่ login)
+class DormStore extends ChangeNotifier {
+  DormStore() {
+    Session.loggedIn.addListener(load);
+  }
+
+  /// true = server ใช้ไม่ได้ให้โชว์หอตัวอย่างแทน (ไว้เดโมตอนไม่ได้เปิด server)
+  bool useMockWhenOffline = true;
+
+  List<Map<String, dynamic>> _dorms = [];
+  List<Map<String, dynamic>> get dorms => _dorms;
+
+  bool hasServerData = false;
+  bool isLoading = false;
+  String? error;
+
+  /// ผลโหลดล่าสุดเป็นของ user id ไหน (0 = ไม่ได้ login)
+  int loadedForUserId = -1;
+
+  Future<void> load() async {
+    isLoading = true;
+    error = null;
+    notifyListeners();
+    final userId = Session.isLoggedIn ? Session.userId : 0;
+    try {
+      final rows = await TenantApiService.getDorms();
+      _dorms = rows.map(DormCatalog.fromApi).toList();
+      hasServerData = true;
+      loadedForUserId = userId;
+    } on TenantApiException catch (e) {
+      error = e.message;
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  bool _disposed = false;
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    Session.loggedIn.removeListener(load);
+    super.dispose();
+  }
+
+  Map<String, dynamic>? byTitle(String title) {
+    for (final d in _dorms) {
+      if (d['title'] == title) return d;
+    }
+    return null;
   }
 }

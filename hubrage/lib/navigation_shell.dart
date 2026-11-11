@@ -7,6 +7,9 @@ import 'views/chat_view.dart';
 import 'views/auth_view.dart';
 import 'views/owner_dashboard_view.dart';
 import 'views/admin_dashboard_view.dart';
+import 'views/my_bookings_view.dart';
+import 'models/dorm_catalog.dart';
+import 'services/admin_api_service.dart';
 import 'models/admin_console_state.dart';
 import 'models/favorites_state.dart';
 import 'theme/app_theme.dart';
@@ -62,6 +65,12 @@ class _NavigationShellState extends State<NavigationShell> {
   };
 
   @override
+  void initState() {
+    super.initState();
+    DormCatalog.live.load(); // โหลดรายการหอจริงจาก server ตั้งแต่เปิดแอป
+  }
+
+  @override
   void dispose() {
     _consoleState.dispose();
     _favorites.dispose();
@@ -76,6 +85,11 @@ class _NavigationShellState extends State<NavigationShell> {
 
   void _onRoleChanged(UserRole newRole) {
     _headerVisible.value = true;
+    // สลับโหมดแล้วดึงข้อมูลล่าสุด (เช่น เจ้าของเพิ่งเพิ่มหอ -> แอดมินเห็นคำขอใหม่)
+    if (newRole == UserRole.tenant) DormCatalog.live.load();
+    if (newRole == UserRole.admin && AdminApiService.isAdmin) {
+      _consoleState.loadFromServer();
+    }
     setState(() {
       _currentRole = newRole;
       _currentIndex = 0;
@@ -250,6 +264,27 @@ class _NavigationShellState extends State<NavigationShell> {
               icon: Icons.admin_panel_settings_rounded,
               title: 'แอดมิน (Admin)',
               subtitle: 'ตรวจเอกสารและดูแลบัญชีผู้ขาย',
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: ListTile(
+                tileColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                leading: const Icon(Icons.event_note_rounded),
+                title: const Text(
+                  'การจองและนัดดูห้องของฉัน',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+                onTap: () {
+                  Navigator.pop(context); // ปิดลิ้นชักเมนู
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MyBookingsView()),
+                  );
+                },
+              ),
             ),
             const Spacer(),
             const Padding(

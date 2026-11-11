@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/admin_console_state.dart';
+import '../models/dorm_catalog.dart';
 import '../theme/app_theme.dart';
 import '../widgets/dorm_gallery.dart';
 import '../services/chat_service.dart';
 import '../services/session.dart';
+import '../services/tenant_api_service.dart';
 import 'auth_view.dart';
 import 'chat_room_view.dart';
 
@@ -33,6 +35,67 @@ class _DormDetailViewState extends State<DormDetailView> {
   late bool _isFavorite = widget.isFavorite;
   int _heroPage = 0;
 
+  // ข้อมูลจริงจาก server (GET /api/tenant/dorms/:id): รายละเอียด + ห้องพัก
+  Map<String, dynamic>? _detail;
+  List<Map<String, dynamic>> _rooms = [];
+  bool _loadingRooms = false;
+  String? _roomsError;
+  int? _bookingRoomId; // ห้องที่กำลังส่งคำขอจอง
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDetail();
+  }
+
+  Future<void> _loadDetail() async {
+    final dormId = _dormDbId;
+    if (dormId == null) return;
+    setState(() {
+      _loadingRooms = true;
+      _roomsError = null;
+    });
+    try {
+      final detail = await TenantApiService.getDorm(dormId);
+      if (!mounted) return;
+      setState(() {
+        _detail = detail;
+        _rooms = ((detail['rooms'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((r) => Map<String, dynamic>.from(r))
+            .toList();
+      });
+    } on TenantApiException catch (e) {
+      if (mounted) setState(() => _roomsError = e.message);
+    } finally {
+      if (mounted) setState(() => _loadingRooms = false);
+    }
+  }
+
+  void _showMessage(String text) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  /// ยังไม่ login -> แจ้งพร้อมปุ่มไปหน้าเข้าสู่ระบบ แล้วคืน false
+  bool _requireLogin(String message) {
+    if (Session.isLoggedIn) return true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: SnackBarAction(
+          label: 'เข้าสู่ระบบ',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AuthView()),
+          ),
+        ),
+      ),
+    );
+    return false;
+  }
+
   /// รูปทั้งหมดของหอ: รูปหน้าปกก่อน ตามด้วยรูปเพิ่มเติมที่เจ้าของหออัปโหลด
   List<dynamic> get _galleryImages {
     final cover = widget.dorm['imageUrl']?.toString() ?? '';
@@ -47,6 +110,7 @@ class _DormDetailViewState extends State<DormDetailView> {
   String get _price => widget.dorm['price']?.toString() ?? '5,000 - 8,500';
   String get _phone => widget.dorm['phone']?.toString() ?? '081-234-5678';
   String get _description =>
+      _detail?['description']?.toString() ??
       widget.dorm['description']?.toString() ??
       'หอพักใกล้มหาวิทยาลัย เดินทางสะดวกและมีระบบรักษาความปลอดภัย';
   String? get _coordinates {
@@ -86,21 +150,7 @@ class _DormDetailViewState extends State<DormDetailView> {
 
   /// ปุ่มแชท: เปิด (หรือสร้าง) ห้องแชทกับเจ้าของหอนี้บน server แล้วเข้าห้อง
   Future<void> _startChat() async {
-    if (!Session.isLoggedIn) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('กรุณาเข้าสู่ระบบก่อนเริ่มแชท'),
-          action: SnackBarAction(
-            label: 'เข้าสู่ระบบ',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const AuthView()),
-            ),
-          ),
-        ),
-      );
-      return;
-    }
+    if (!_requireLogin('กรุณาเข้าสู่ระบบก่อนเริ่มแชท')) return;
     final dormId = _dormDbId;
     if (dormId == null || _openingChat) return;
 
@@ -137,6 +187,10 @@ class _DormDetailViewState extends State<DormDetailView> {
   }
 
   Future<void> _requestVisit() async {
+    if (widget.onVisitRequest == null &&
+        !_requireLogin('กรุณาเข้าสู่ระบบก่อนนัดดูห้อง')) {
+      return;
+    }
     DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
     TimeOfDay selectedTime = const TimeOfDay(hour: 14, minute: 0);
     final confirmed = await showDialog<bool>(
@@ -200,17 +254,148 @@ class _DormDetailViewState extends State<DormDetailView> {
       selectedTime.hour,
       selectedTime.minute,
     );
-    if (widget.onVisitRequest == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'เลือกวันนัดแล้ว — การส่งคำขอจะใช้งานได้เมื่อเชื่อมต่อระบบ',
+    if (widget.onVisitRequest != null) {
+      await widget.onVisitRequest!(visitAt);
+      return;
+    }
+    final dormId = _dormDbId;
+    if (dormId == null) {
+      _showMessage('หอนี้ยังไม่มีในระบบ ส่งคำขอนัดไม่ได้');
+      return;
+    }
+    try {
+      await TenantApiService.createVisitRequest(dormId: dormId, visitAt: visitAt);
+      if (mounted) {
+        _showMessage('ส่งคำขอนัดดูห้องแล้ว รอเจ้าของหอตอบรับ');
+      }
+    } on TenantApiException catch (e) {
+      if (mounted) _showMessage(e.message);
+    }
+  }
+
+  /// จองห้อง: ยืนยัน -> POST /api/tenant/bookings -> เจ้าของหอเห็นในหน้าของเขา
+  Future<void> _bookRoom(Map<String, dynamic> room) async {
+    if (!_requireLogin('กรุณาเข้าสู่ระบบก่อนจองห้อง')) return;
+    final roomId = int.tryParse('${room['id']}');
+    if (roomId == null || _bookingRoomId != null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('ยืนยันการจองห้อง'),
+        content: Text(
+          '$_title\nห้อง ${room['roomNumber']} • ${room['roomType']}\n'
+          '${DormCatalog.money(room['price'])} บาท/เดือน\n\n'
+          'เจ้าของหอจะติดต่อกลับเพื่อยืนยันการจอง',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('ยกเลิก'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('ส่งคำขอจอง'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _bookingRoomId = roomId);
+    try {
+      await TenantApiService.createBooking(roomId: roomId);
+      if (mounted) _showMessage('ส่งคำขอจองห้อง ${room['roomNumber']} แล้ว');
+    } on TenantApiException catch (e) {
+      if (mounted) _showMessage(e.message);
+    } finally {
+      if (mounted) setState(() => _bookingRoomId = null);
+    }
+    _loadDetail(); // สถานะห้องอาจเปลี่ยน
+  }
+
+  static const _roomStatusLabel = {
+    'available': 'ว่าง',
+    'occupied': 'มีผู้เช่า',
+    'maintenance': 'ปรับปรุง',
+  };
+
+  /// รายการห้องพักจริงจาก server + ปุ่มจองห้องที่ว่าง
+  Widget _roomsSection() {
+    if (_loadingRooms && _rooms.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_roomsError != null && _rooms.isEmpty) {
+      return AppCard(
+        child: ListTile(
+          leading: const Icon(Icons.cloud_off_outlined),
+          title: Text(_roomsError!, style: const TextStyle(fontSize: 13)),
+          trailing: IconButton(
+            tooltip: 'ลองใหม่',
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadDetail,
           ),
         ),
       );
-      return;
     }
-    await widget.onVisitRequest!(visitAt);
+    if (_rooms.isEmpty) {
+      return const AppCard(
+        child: ListTile(
+          leading: Icon(Icons.meeting_room_outlined),
+          title: Text('ยังไม่มีข้อมูลห้องพัก', style: TextStyle(fontSize: 13)),
+          subtitle: Text(
+            'โทรสอบถามห้องว่างกับเจ้าของหอได้โดยตรง',
+            style: TextStyle(fontSize: 12, color: AppColors.muted),
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: _rooms.map((room) {
+        final status = room['status']?.toString() ?? '';
+        final available = status == 'available';
+        final roomId = int.tryParse('${room['id']}');
+        final booking = _bookingRoomId != null && _bookingRoomId == roomId;
+        return AppCard(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            leading: CircleAvatar(
+              backgroundColor: available ? AppColors.accentSoft : AppColors.field,
+              child: Icon(
+                Icons.meeting_room_outlined,
+                color: available ? AppColors.accent : AppColors.muted,
+              ),
+            ),
+            title: Text(
+              'ห้อง ${room['roomNumber']} • ${room['roomType']}',
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            subtitle: Text(
+              '${DormCatalog.money(room['price'])} บาท/เดือน • '
+              '${_roomStatusLabel[status] ?? status}',
+              style: const TextStyle(fontSize: 12, color: AppColors.muted),
+            ),
+            trailing: available
+                ? ElevatedButton(
+                    onPressed: _bookingRoomId == null ? () => _bookRoom(room) : null,
+                    style: ElevatedButton.styleFrom(minimumSize: const Size(64, 38)),
+                    child: booking
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('จอง'),
+                  )
+                : null,
+          ),
+        );
+      }).toList(),
+    );
   }
 
   Widget _heroSection(BuildContext context) {
@@ -608,6 +793,13 @@ class _DormDetailViewState extends State<DormDetailView> {
                       );
                     },
                   ),
+                  const SizedBox(height: 28),
+                  const _SectionHeader(
+                    'ห้องพัก',
+                    icon: Icons.meeting_room_outlined,
+                  ),
+                  const SizedBox(height: 12),
+                  _roomsSection(),
                   const SizedBox(height: 28),
                   const _SectionHeader(
                     'รายละเอียดห้องพักและเงื่อนไข',

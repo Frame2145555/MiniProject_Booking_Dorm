@@ -70,6 +70,41 @@ class OwnerApiService {
     };
   }
 
+  /// คำขอจองห้องของหอเรา (owner_booking_routes.js)
+  static Future<List<Map<String, dynamic>>> getBookings() async {
+    final response = await _send('GET', '/api/owner/bookings');
+    final data = response['data'];
+    if (data is! List) {
+      throw const OwnerApiException('รูปแบบคำขอจองจากเซิร์ฟเวอร์ไม่ถูกต้อง');
+    }
+    return data
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  /// status: confirmed (ห้องจะเปลี่ยนเป็นมีผู้เช่า) | cancelled | completed
+  static Future<void> setBookingStatus(String bookingId, String status) async {
+    await _send(
+      'PATCH',
+      '/api/owner/bookings/$bookingId/status',
+      body: {'status': status},
+    );
+  }
+
+  /// status: accepted | declined | completed
+  static Future<void> setVisitStatus(
+    String visitId,
+    String status, {
+    String? ownerNote,
+  }) async {
+    await _send(
+      'PATCH',
+      '/api/owner/visit-requests/$visitId/status',
+      body: {'status': status, if (ownerNote != null) 'ownerNote': ownerNote},
+    );
+  }
+
   static Future<void> createDorm(Map<String, dynamic> dorm) async {
     await _send('POST', '/api/owner/dorms', body: dorm);
   }
@@ -133,7 +168,7 @@ class OwnerApiService {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         if (response.statusCode == 401) logout();
         throw OwnerApiException(
-          data['message']?.toString() ??
+          (data['message'] ?? data['error'])?.toString() ??
               'เรียกใช้ระบบเจ้าของหอไม่สำเร็จ (${response.statusCode})',
         );
       }

@@ -25,6 +25,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
   String? _loadError;
   Map<String, dynamic> _dashboardStats = {};
   List<Map<String, dynamic>> _visitRequests = [];
+  List<Map<String, dynamic>> _bookings = []; // คำขอจองห้องจากผู้เช่า
   final List<Map<String, dynamic>> _myDorms = [];
 
   bool get _sellerSuspended => _dashboardStats['account_status'] == 'suspended';
@@ -45,6 +46,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
         _myDorms.clear();
         _dashboardStats = {};
         _visitRequests = [];
+        _bookings = [];
         _loadError = null;
       });
     } else if (!_isLoading) {
@@ -89,6 +91,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
         OwnerApiService.getDashboardStats(),
         OwnerApiService.getDorms(),
         OwnerApiService.getVisitRequests(),
+        OwnerApiService.getBookings(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -101,6 +104,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
         _visitRequests =
             (results[2] as Map<String, dynamic>)['data']
                 as List<Map<String, dynamic>>;
+        _bookings = results[3] as List<Map<String, dynamic>>;
       });
     } on OwnerApiException catch (error) {
       if (mounted) setState(() => _loadError = error.message);
@@ -776,6 +780,14 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                     'longitude': longitude,
                     'imageUrl': imageUrl,
                     'amenities': amenities,
+                    // ชื่อไฟล์เอกสาร -> แอดมินเห็นในคำขอ (ยังไม่ได้อัปโหลดตัวไฟล์จริง)
+                    'documents': documents
+                        .map((d) => {
+                              'type': d['type'],
+                              'name': d['name'],
+                              'key': 'uploads/dorms/${d['name']}',
+                            })
+                        .toList(),
                   });
                   await _loadOwnerData();
                 } on OwnerApiException catch (error) {
@@ -1437,6 +1449,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
       _myDorms.clear();
       _dashboardStats.clear();
       _visitRequests.clear();
+      _bookings.clear();
       _loadError = null;
     });
   }
@@ -1462,7 +1475,107 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
               '${request['roomNumber'] ?? 'ไม่ระบุห้อง'} • '
               '${request['requestedAt'] ?? ''}',
             ),
-            trailing: StatusPill(request['status']?.toString() ?? 'pending'),
+            trailing: request['status'] == 'pending'
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'ปฏิเสธ',
+                        icon: const Icon(Icons.close, color: AppColors.muted),
+                        onPressed: () => _answerVisit(request, 'declined'),
+                      ),
+                      IconButton(
+                        tooltip: 'ตอบรับนัด',
+                        icon: const Icon(Icons.check_circle, color: AppColors.success),
+                        onPressed: () => _answerVisit(request, 'accepted'),
+                      ),
+                    ],
+                  )
+                : StatusPill(request['status']?.toString() ?? 'pending'),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Future<void> _answerVisit(Map<String, dynamic> request, String status) async {
+    await _runOwnerAction(
+      () => OwnerApiService.setVisitStatus(request['id'].toString(), status),
+      status == 'accepted' ? 'ตอบรับนัดดูห้องแล้ว' : 'ปฏิเสธนัดดูห้องแล้ว',
+    );
+  }
+
+  Future<void> _answerBooking(Map<String, dynamic> booking, String status) async {
+    await _runOwnerAction(
+      () => OwnerApiService.setBookingStatus(booking['id'].toString(), status),
+      status == 'confirmed'
+          ? 'ยืนยันการจองแล้ว (ห้อง ${booking['roomNumber']} เปลี่ยนเป็นมีผู้เช่า)'
+          : 'ยกเลิกคำขอจองแล้ว',
+    );
+  }
+
+  /// เรียก API แล้วโหลดข้อมูลหน้าใหม่ + แจ้งผล
+  Future<void> _runOwnerAction(Future<void> Function() action, String done) async {
+    try {
+      await action();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(done)));
+      await _loadOwnerData();
+    } on OwnerApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    }
+  }
+
+  static const _bookingStatusLabel = {
+    'pending': 'รอยืนยัน',
+    'confirmed': 'ยืนยันแล้ว',
+    'cancelled': 'ยกเลิกแล้ว',
+    'completed': 'เสร็จสิ้น',
+  };
+
+  Widget _buildBookings() {
+    if (_bookings.isEmpty) {
+      return _emptyCard(
+        Icons.meeting_room_outlined,
+        'ยังไม่มีคำขอจอง',
+        'เมื่อผู้เช่ากดจองห้อง คำขอจะแสดงในส่วนนี้',
+      );
+    }
+    return Column(
+      children: _bookings.map((booking) {
+        final status = booking['status']?.toString() ?? 'pending';
+        return AppCard(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: ListTile(
+            leading: const Icon(Icons.meeting_room_outlined),
+            title: Text(
+              '${booking['dormName'] ?? 'หอพัก'} • ห้อง ${booking['roomNumber'] ?? '-'}',
+            ),
+            subtitle: Text(
+              '${booking['tenantName'] ?? 'ผู้เช่า'} • ${booking['tenantPhone'] ?? '-'}\n'
+              '${booking['monthlyPrice'] ?? '-'} บาท/เดือน',
+            ),
+            isThreeLine: true,
+            trailing: status == 'pending'
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'ยกเลิกคำขอ',
+                        icon: const Icon(Icons.close, color: AppColors.muted),
+                        onPressed: () => _answerBooking(booking, 'cancelled'),
+                      ),
+                      IconButton(
+                        tooltip: 'ยืนยันการจอง',
+                        icon: const Icon(Icons.check_circle, color: AppColors.success),
+                        onPressed: () => _answerBooking(booking, 'confirmed'),
+                      ),
+                    ],
+                  )
+                : StatusPill(_bookingStatusLabel[status] ?? status),
           ),
         );
       }).toList(),
@@ -2237,6 +2350,9 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
               ..._myDorms.map(_buildDormCard),
               const SizedBox(height: 8),
               _buildReviewStatusSection(),
+              const SizedBox(height: 20),
+              _sectionHeader('คำขอจองห้อง', subtitle: '${_bookings.length} รายการ'),
+              _buildBookings(),
               const SizedBox(height: 20),
               _sectionHeader('คำขอนัดดูห้อง'),
               _buildVisitRequests(),

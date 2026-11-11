@@ -25,8 +25,22 @@ const auth = require("./loginandregister")(db, { jwtSecret: appCfg.jwt_secret })
 app.use("/api", auth.router);                                  // POST /api/register, /api/login · GET /api/me
 app.use("/api", require("./searchandsort")(db));               // GET /api/dorms, /api/dorms/:id, /api/amenities
 app.use("/api", require("./chat_routes")(pool, auth.verifyToken)); // /api/conversations ... (แชท)
+app.use("/api/owner", require("./owner_booking_routes")(db, auth)); // จอง/นัด ฝั่งเจ้าของหอ (ส่วนเสริม ต้องมาก่อนของพี่)
 app.use("/api/owner", require("./Troutes/ownerRoutes"));       // ระบบเจ้าของหอ (ของพี่): /api/owner/...
-app.use("/api/tenant", require("./Troutes/tenantRoutes"));     // ระบบค้นหา/จอง (ของพี่): /api/tenant/...
+// หน้า list/รายละเอียดหอเปิดดูได้โดยไม่ login แต่ถ้าแนบ token มา ให้รู้ว่าใครดู (isFavorite / ยอดวิว)
+const jwt = require("jsonwebtoken");
+const optionalUser = (req, res, next) => {
+  const m = /^Bearer (.+)$/i.exec(req.header("authorization") || "");
+  if (m) {
+    try {
+      const p = jwt.verify(m[1], appCfg.jwt_secret);
+      req.user = { id: p.id, role: p.role };
+    } catch { /* token เสีย = ดูแบบไม่ login */ }
+  }
+  next();
+};
+app.use("/api/tenant", optionalUser, require("./Troutes/tenantRoutes")); // ระบบค้นหา/จอง (ของพี่): /api/tenant/...
+app.use("/api/admin", require("./admin_routes")(db, auth));    // ระบบแอดมิน: อนุมัติหอ / ระงับบัญชี
 // ไม่ได้ mount Troutes/authRoutes (/api/login ของพี่) เพราะซ้ำกับ loginandregister.js ด้านบน
 
 app.get("/", (req, res) => res.json({ message: "Dorm Master server is running" }));

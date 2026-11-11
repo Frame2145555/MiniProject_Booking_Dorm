@@ -21,7 +21,11 @@ class HomeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge(<Listenable?>[consoleState, favorites]),
+      animation: Listenable.merge(<Listenable?>[
+        consoleState,
+        favorites,
+        DormCatalog.live, // รายการหอจริงจาก server
+      ]),
       builder: (context, _) {
         final dorms = DormCatalog.visibleDorms(consoleState);
         return CustomScrollView(
@@ -70,15 +74,37 @@ class HomeView extends StatelessWidget {
                 ),
               ),
             ),
-            if (dorms.isEmpty)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: Text(
-                    'ยังไม่มีหอพักในขณะนี้',
-                    style: TextStyle(color: AppColors.muted, fontSize: 16),
+            // ต่อ server ไม่ได้ -> แสดงหอตัวอย่าง พร้อมบอกให้รู้ว่าไม่ใช่ข้อมูลจริง
+            if (dorms.isNotEmpty &&
+                !DormCatalog.live.hasServerData &&
+                DormCatalog.live.error != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: AppCard(
+                    child: ListTile(
+                      leading: const Icon(Icons.cloud_off_outlined),
+                      title: const Text(
+                        'แสดงหอตัวอย่าง (ต่อ server ไม่ได้)',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                      ),
+                      subtitle: Text(
+                        DormCatalog.live.error!,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: IconButton(
+                        tooltip: 'ลองใหม่',
+                        icon: const Icon(Icons.refresh),
+                        onPressed: DormCatalog.live.load,
+                      ),
+                    ),
                   ),
                 ),
+              ),
+            if (dorms.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: _emptyState()),
               )
             else
               SliverPadding(
@@ -106,6 +132,37 @@ class HomeView extends StatelessWidget {
       },
     );
   }
+}
+
+/// ไม่มีหอให้แสดง: กำลังโหลด / โหลดไม่สำเร็จ (กดลองใหม่ได้) / ไม่มีหอจริงๆ
+Widget _emptyState() {
+  final store = DormCatalog.live;
+  if (store.isLoading) return const CircularProgressIndicator();
+  if (store.error != null) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            store.error!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.muted, fontSize: 14),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: store.load,
+            icon: const Icon(Icons.refresh),
+            label: const Text('ลองใหม่'),
+          ),
+        ],
+      ),
+    );
+  }
+  return const Text(
+    'ยังไม่มีหอพักในขณะนี้',
+    style: TextStyle(color: AppColors.muted, fontSize: 16),
+  );
 }
 
 class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
