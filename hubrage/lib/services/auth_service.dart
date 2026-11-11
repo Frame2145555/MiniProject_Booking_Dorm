@@ -12,50 +12,13 @@ class AuthService {
     String password, {
     http.Client? client,
     bool connectSocket = true,
-  }) =>
-      _authenticate(
-        '/api/login',
-        {'email': email, 'password': password},
-        client: client,
-        connectSocket: connectSocket,
-      );
-
-  /// สมัครสมาชิก แล้ว login ให้เลย (server ตอบ token ชุดเดียวกับ login)
-  /// [role] = 'tenant' (ผู้เช่า) หรือ 'seller' (เจ้าของหอ) — คืน null ถ้าสำเร็จ ไม่งั้นคืนข้อความ error
-  static Future<String?> register({
-    required String email,
-    required String password,
-    required String fullName,
-    String? phone,
-    String role = 'tenant',
-    http.Client? client,
-    bool connectSocket = true,
-  }) =>
-      _authenticate(
-        '/api/register',
-        {
-          'email': email,
-          'password': password,
-          'full_name': fullName,
-          if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
-          'role': role,
-        },
-        client: client,
-        connectSocket: connectSocket,
-      );
-
-  static Future<String?> _authenticate(
-    String path,
-    Map<String, dynamic> payload, {
-    http.Client? client,
-    required bool connectSocket,
   }) async {
-    final url = Uri.parse('${ApiConfig.baseUrl}$path');
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/login');
     final headers = {
       'Content-Type': 'application/json',
       'ngrok-skip-browser-warning': 'true',
     };
-    final body = jsonEncode(payload);
+    final body = jsonEncode({'email': email, 'password': password});
 
     http.Response res;
     try {
@@ -69,12 +32,9 @@ class AuthService {
 
     if (res.statusCode == 401) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
     if (res.statusCode == 403) return 'บัญชีนี้ถูกระงับ';
-    // 400 ข้อมูลไม่ครบ/ไม่ถูกต้อง, 409 อีเมลซ้ำ, 429 ลองบ่อยเกินไป -> server ส่งข้อความไทยมาให้แล้ว
-    if (res.statusCode == 400 || res.statusCode == 409 || res.statusCode == 429) {
-      return _serverMessage(res) ?? 'ข้อมูลไม่ถูกต้อง (${res.statusCode})';
-    }
-    if (res.statusCode != 200 && res.statusCode != 201) {
-      return 'เข้าสู่ระบบไม่สำเร็จ (${res.statusCode}) ที่ ${ApiConfig.baseUrl}$path';
+    if (res.statusCode == 429) return 'ลองเข้าสู่ระบบผิดหลายครั้งเกินไป รอสักครู่แล้วลองใหม่';
+    if (res.statusCode != 200) {
+      return 'เข้าสู่ระบบไม่สำเร็จ (${res.statusCode}) ที่ ${ApiConfig.baseUrl}/api/login';
     }
 
     if (Session.isLoggedIn) logout(); // login เป็นคนใหม่ = ออกจากบัญชีเดิมก่อน
@@ -89,13 +49,57 @@ class AuthService {
     return null;
   }
 
-  static String? _serverMessage(http.Response res) {
+  /// สมัครสมาชิก -> POST /api/register (server ตัวรวม พอร์ต 3000)
+  /// คืนค่า null ถ้าสมัครสำเร็จ ไม่งั้นคืนข้อความ error ไว้โชว์ผู้ใช้
+  /// [role] ส่งเป็น String ('tenant' / 'seller') หรือ enum UserRole ก็ได้
+  /// สมัครเสร็จยังไม่ login ให้ (ผู้ใช้ไป login ต่อที่แท็บเข้าสู่ระบบ)
+  static Future<String?> register({
+    required String email,
+    required String password,
+    required String fullName,
+    String? phone,
+    Object? role,
+    http.Client? client,
+  }) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/register');
+    final headers = {
+      'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
+    };
+    final roleName = role == null
+        ? 'tenant'
+        : (role is Enum ? role.name : role.toString());
+    final body = jsonEncode({
+      'email': email.trim(),
+      'password': password,
+      'full_name': fullName.trim(),
+      'phone': (phone ?? '').trim(),
+      'role': roleName,
+    });
+
+    http.Response res;
     try {
-      final msg = jsonDecode(res.body)['error'];
-      return msg is String && msg.isNotEmpty ? msg : null;
-    } catch (_) {
-      return null;
+      final request = client == null
+          ? http.post(url, headers: headers, body: body)
+          : client.post(url, headers: headers, body: body);
+      res = await request.timeout(const Duration(seconds: 10));
+    } catch (e) {
+      return 'เชื่อมต่อ ${ApiConfig.baseUrl} ไม่ได้ (เปิด server / ngrok หรือยัง?)';
     }
+
+    if (res.statusCode == 201 || res.statusCode == 200) return null;
+
+    // server ส่ง { error: '...' } มาเป็นภาษาไทยอยู่แล้ว -> ใช้ข้อความนั้นเลย
+    String? serverMessage;
+    try {
+      final data = jsonDecode(res.body);
+      if (data is Map) serverMessage = (data['error'] ?? data['message'])?.toString();
+    } catch (_) {}
+    if (serverMessage != null && serverMessage.isNotEmpty) return serverMessage;
+
+    if (res.statusCode == 409) return 'อีเมลนี้ถูกใช้งานแล้ว';
+    if (res.statusCode == 429) return 'สมัครบ่อยเกินไป กรุณาลองใหม่ภายหลัง';
+    return 'สมัครสมาชิกไม่สำเร็จ (${res.statusCode}) ที่ ${ApiConfig.baseUrl}/api/register';
   }
 
   static void logout() {

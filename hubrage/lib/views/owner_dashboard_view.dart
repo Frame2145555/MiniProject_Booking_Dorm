@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/admin_console_state.dart';
 import '../models/dorm_model.dart';
+import '../services/owner_api_service.dart';
+import '../services/session.dart';
 import '../theme/app_theme.dart';
 import '../widgets/dorm_gallery.dart';
 
@@ -17,79 +19,138 @@ class OwnerDashboardView extends StatefulWidget {
 class _OwnerDashboardViewState extends State<OwnerDashboardView> {
   bool _isSubscribed = true;
   DateTime _subExpiryDate = DateTime.now().add(const Duration(days: 25));
-  static const _currentSellerId = 'seller_001';
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+  String? _loadError;
+  Map<String, dynamic> _dashboardStats = {};
+  List<Map<String, dynamic>> _visitRequests = [];
+  final List<Map<String, dynamic>> _myDorms = [];
 
-  bool get _sellerSuspended =>
-      widget.consoleState.isSellerSuspended(_currentSellerId);
+  bool get _sellerSuspended => _dashboardStats['account_status'] == 'suspended';
 
-  final List<Map<String, dynamic>> _myDorms = [
-    {
-      'id': 'dorm_1',
-      'sellerId': 'seller_001',
-      'title': 'หอรวย เธะ (รามคำแหง 24)',
-      'location': 'ซอยรามคำแหง 24 แยก 2',
-      'phone': '081-234-5678',
-      'description': 'หอพักใกล้มหาวิทยาลัย มีระบบรักษาความปลอดภัย',
-      'priceMin': 5000,
-      'priceMax': 8500,
-      'amenities': ['แอร์', 'Wi-Fi', 'ที่จอดรถ'],
-      'totalRooms': 24,
-      'imageUrl': '', // ว่างไว้ได้ (เป็นทางเลือก)
-      'roomsList': [
-        RoomDetailModel(
-          roomNumber: '101',
-          roomType: 'เตียง 5 ฟุต',
-          price: 5500,
-          status: 'ว่าง',
-        ),
-        RoomDetailModel(
-          roomNumber: '102',
-          roomType: 'เตียง 5 ฟุต',
-          price: 5500,
-          status: 'มีผู้เช่า',
-        ),
-        RoomDetailModel(
-          roomNumber: '103',
-          roomType: 'เตียง 6 ฟุต (VIP)',
-          price: 7500,
-          status: 'ว่าง',
-        ),
-        RoomDetailModel(
-          roomNumber: '104',
-          roomType: 'เตียง 6 ฟุต (VIP)',
-          price: 7500,
-          status: 'ปรับปรุง',
-        ),
-      ],
-    },
-    {
-      'id': 'dorm_2',
-      'sellerId': 'seller_002',
-      'title': 'หออิสลาม แกรนด์',
-      'location': 'ซอยรามคำแหง 24',
-      'phone': '089-876-5432',
-      'description': 'หอพักทำเลสะดวก มีระบบรักษาความปลอดภัย',
-      'priceMin': 6500,
-      'priceMax': 9000,
-      'amenities': ['แอร์', 'กล้องวงจรปิด', 'ลิฟต์'],
-      'totalRooms': 18,
-      'imageUrl': '',
-      'roomsList': [
-        RoomDetailModel(
-          roomNumber: '201',
-          roomType: 'เตียง 6 ฟุต',
-          price: 6500,
-          status: 'มีผู้เช่า',
-        ),
-        RoomDetailModel(
-          roomNumber: '202',
-          roomType: 'เตียง 6 ฟุต',
-          price: 6500,
-          status: 'ว่าง',
-        ),
-      ],
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    // หน้านี้ถูกสร้างครั้งเดียว (IndexedStack) -> ฟัง login/logout จากทุกหน้าในแอป
+    Session.loggedIn.addListener(_onSessionChanged);
+    if (OwnerApiService.isLoggedIn) _loadOwnerData();
+  }
+
+  /// login/logout จากหน้าไหนก็ตาม (หน้าบัญชี, ปุ่มบัญชีขวาบน, หน้านี้) -> โหลด/ล้างข้อมูลเอง
+  void _onSessionChanged() {
+    if (!mounted) return;
+    if (!OwnerApiService.isLoggedIn) {
+      setState(() {
+        _myDorms.clear();
+        _dashboardStats = {};
+        _visitRequests = [];
+        _loadError = null;
+      });
+    } else if (!_isLoading) {
+      _loadOwnerData(); // ถ้ากำลังโหลดอยู่ (เช่น login จากฟอร์มในหน้านี้) ให้ตัวที่โหลดอยู่ทำต่อ
+    }
+  }
+
+  @override
+  void dispose() {
+    Session.loggedIn.removeListener(_onSessionChanged);
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loginOwner() async {
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    try {
+      await OwnerApiService.login(
+        _emailController.text.trim(),
+        _passwordController.text,
+      );
+      _passwordController.clear();
+      await _loadOwnerData();
+    } on OwnerApiException catch (error) {
+      if (mounted) setState(() => _loadError = error.message);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadOwnerData() async {
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    try {
+      final results = await Future.wait([
+        OwnerApiService.getDashboardStats(),
+        OwnerApiService.getDorms(),
+        OwnerApiService.getVisitRequests(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _dashboardStats =
+            (results[0] as Map<String, dynamic>)['data']
+                as Map<String, dynamic>;
+        _myDorms
+          ..clear()
+          ..addAll((results[1] as List<Map<String, dynamic>>).map(_mapDorm));
+        _visitRequests =
+            (results[2] as Map<String, dynamic>)['data']
+                as List<Map<String, dynamic>>;
+      });
+    } on OwnerApiException catch (error) {
+      if (mounted) setState(() => _loadError = error.message);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Map<String, dynamic> _mapDorm(Map<String, dynamic> dorm) {
+    final rawRooms = dorm['roomsList'] as List? ?? const [];
+    final rooms = rawRooms.whereType<Map>().map((rawRoom) {
+      final room = Map<String, dynamic>.from(rawRoom);
+      return RoomDetailModel(
+        id: int.tryParse(room['id'].toString()),
+        roomNumber: room['roomNumber']?.toString() ?? '',
+        roomType: room['roomType']?.toString() ?? '',
+        price: double.tryParse(room['price'].toString()) ?? 0,
+        status: _roomStatusToLabel(room['status']?.toString() ?? ''),
+      );
+    }).toList();
+
+    return {
+      ...dorm,
+      'id': dorm['id'].toString(),
+      'sellerId': dorm['sellerId'].toString(),
+      'title': dorm['title']?.toString() ?? '',
+      'location': dorm['location']?.toString() ?? '',
+      'phone': dorm['phone']?.toString() ?? '',
+      'description': dorm['description']?.toString() ?? '',
+      'priceMin': dorm['priceMin'],
+      'priceMax': dorm['priceMax'],
+      'imageUrl': dorm['imageUrl']?.toString() ?? '',
+      'amenities': List<String>.from(dorm['amenities'] as List? ?? const []),
+      'roomsList': rooms,
+      'images': <dynamic>[],
+    };
+  }
+
+  String _roomStatusToLabel(String status) {
+    switch (status) {
+      case 'available':
+        return 'ว่าง';
+      case 'occupied':
+        return 'มีผู้เช่า';
+      case 'maintenance':
+        return 'ปรับปรุง';
+      default:
+        return status;
+    }
+  }
 
   // คำนวณจำนวนห้องว่างของแต่ละหอพัก
   int _getAvailableRoomsCount(Map<String, dynamic> dorm) {
@@ -160,7 +221,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
             child: const Text('ยกเลิก'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               setState(() {
                 _isSubscribed = true;
                 _subExpiryDate = DateTime.now().add(const Duration(days: 30));
@@ -237,9 +298,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
               TextField(
                 controller: phoneController,
                 keyboardType: TextInputType.phone,
-                decoration: AppInputs.field(
-                  labelText: 'เบอร์ติดต่อผู้ดูแลหอ',
-                ),
+                decoration: AppInputs.field(labelText: 'เบอร์ติดต่อผู้ดูแลหอ'),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -288,7 +347,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
             child: const Text('ยกเลิก'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (titleController.text.trim().isEmpty ||
                   addressController.text.trim().isEmpty ||
                   phoneController.text.trim().isEmpty ||
@@ -304,24 +363,29 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 );
                 return;
               }
-              setState(() {
-                dorm['title'] = titleController.text.trim();
-                dorm['location'] = addressController.text.trim();
-                dorm['phone'] = phoneController.text.trim();
-                dorm['description'] = descriptionController.text.trim();
-                dorm['priceMin'] = int.tryParse(minPriceController.text);
-                dorm['priceMax'] = int.tryParse(maxPriceController.text);
-                dorm['imageUrl'] = imageController.text.trim();
-                dorm['images'] = List<dynamic>.from(galleryImages);
-              });
-              widget.consoleState.updateDormMedia(
-                dorm['id'].toString(),
-                imageUrl: imageController.text.trim(),
-                images: List<dynamic>.from(galleryImages),
-              );
+              try {
+                await OwnerApiService.updateDorm(dorm['id'].toString(), {
+                  'title': titleController.text.trim(),
+                  'location': addressController.text.trim(),
+                  'phone': phoneController.text.trim(),
+                  'description': descriptionController.text.trim(),
+                  'priceMin': int.parse(minPriceController.text),
+                  'priceMax': int.parse(maxPriceController.text),
+                  'imageUrl': imageController.text.trim(),
+                });
+              } on OwnerApiException catch (error) {
+                if (mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(error.message)));
+                }
+                return;
+              }
+              await _loadOwnerData();
+              if (!mounted || !dialogContext.mounted) return;
               Navigator.pop(dialogContext);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('อัปเดตข้อมูลตัวอย่างแล้ว')),
+                const SnackBar(content: Text('อัปเดตข้อมูลหอพักแล้ว')),
               );
             },
             style: ElevatedButton.styleFrom(
@@ -425,7 +489,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                     style: TextStyle(color: AppColors.muted, fontSize: 12),
                   ),
                   const SizedBox(height: 12),
-                                    TextField(
+                  TextField(
                     controller: titleCtrl,
                     decoration: AppInputs.field(
                       labelText: 'ชื่อหอพัก *',
@@ -633,7 +697,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
               child: const Text('ยกเลิก'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 final minPrice = int.tryParse(minPriceCtrl.text);
                 final maxPrice = int.tryParse(maxPriceCtrl.text);
                 final latitudeText = latitudeCtrl.text.trim();
@@ -695,55 +759,40 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                   return;
                 }
 
-                final dormId = 'dorm_${DateTime.now().millisecondsSinceEpoch}';
                 final title = titleCtrl.text.trim();
                 final location = addressCtrl.text.trim();
                 final phone = phoneCtrl.text.trim();
                 final description = descriptionCtrl.text.trim();
                 final imageUrl = imageUrlCtrl.text.trim();
-                widget.consoleState.submitDormRequest(
-                  sellerId: _currentSellerId,
-                  sellerName: 'นายสมชาย ใจดี',
-                  dormId: dormId,
-                  dormName: title,
-                  phone: phone,
-                  location: location,
-                  latitude: latitude,
-                  longitude: longitude,
-                  description: description,
-                  priceMin: minPrice,
-                  priceMax: maxPrice,
-                  amenities: List<String>.from(amenities),
-                  imageUrl: imageUrl,
-                  images: List<dynamic>.from(galleryImages),
-                  documents: documents
-                      .map((document) => Map<String, String>.from(document))
-                      .toList(),
-                );
-                setState(
-                  () => _myDorms.add({
-                    'id': dormId,
-                    'sellerId': _currentSellerId,
+                try {
+                  await OwnerApiService.createDorm({
                     'title': title,
                     'location': location,
-                    'latitude': latitude,
-                    'longitude': longitude,
                     'phone': phone,
                     'description': description,
                     'priceMin': minPrice,
                     'priceMax': maxPrice,
-                    'amenities': List<String>.from(amenities),
+                    'latitude': latitude,
+                    'longitude': longitude,
                     'imageUrl': imageUrl,
-                    'images': List<dynamic>.from(galleryImages),
-                    'approvalStatus': 'pending',
-                    'roomsList': <RoomDetailModel>[],
-                  }),
-                );
+                    'amenities': amenities,
+                  });
+                  await _loadOwnerData();
+                } on OwnerApiException catch (error) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(error.message)));
+                  }
+                  return;
+                }
+                if (!context.mounted) return;
+                if (!mounted || !dialogContext.mounted) return;
                 Navigator.pop(dialogContext);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text(
-                      'ส่งข้อมูลและเอกสารให้แอดมินตรวจแล้ว หอจะยังไม่แสดงต่อผู้เช่าจนกว่าจะอนุมัติ',
+                      'ส่งข้อมูลหอพักแล้ว และรอแอดมินตรวจอนุมัติก่อนแสดงต่อผู้เช่า',
                     ),
                   ),
                 );
@@ -945,15 +994,13 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                                                     .toList(),
                                             onChanged: (newStatus) {
                                               if (newStatus != null) {
-                                                setModalState(() {
-                                                  rooms[idx] = RoomDetailModel(
-                                                    roomNumber: room.roomNumber,
-                                                    roomType: room.roomType,
-                                                    price: room.price,
-                                                    status: newStatus,
-                                                  );
-                                                });
-                                                setState(() {});
+                                                _changeRoomStatus(
+                                                  room,
+                                                  newStatus,
+                                                  rooms,
+                                                  idx,
+                                                  setModalState,
+                                                );
                                               }
                                             },
                                           ),
@@ -975,14 +1022,46 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
     );
   }
 
+  Future<void> _changeRoomStatus(
+    RoomDetailModel room,
+    String status,
+    List<RoomDetailModel> rooms,
+    int index,
+    void Function(void Function()) setModalState,
+  ) async {
+    if (room.id == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('ไม่พบรหัสห้องจากระบบ')));
+      return;
+    }
+    try {
+      await OwnerApiService.setRoomStatus(room.id.toString(), status);
+      setModalState(() {
+        rooms[index] = RoomDetailModel(
+          id: room.id,
+          roomNumber: room.roomNumber,
+          roomType: room.roomType,
+          price: room.price,
+          status: status,
+        );
+      });
+      if (mounted) setState(() {});
+    } on OwnerApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    }
+  }
+
   // 2. Dialog สำหรับการเพิ่มห้องใหม่ลงในหอพัก
   void _showAddSingleRoomDialog(
     Map<String, dynamic> dorm,
     VoidCallback onAdded,
   ) {
-    if (widget.consoleState.isSellerSuspended(
-      dorm['sellerId']?.toString() ?? _currentSellerId,
-    )) {
+    if (_sellerSuspended) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('บัญชีถูกระงับ จึงส่งคำขอเพิ่มห้องไม่ได้'),
@@ -1031,7 +1110,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                     },
                   ),
                   const SizedBox(height: 10),
-                                    TextField(
+                  TextField(
                     controller: priceCtrl,
                     keyboardType: TextInputType.number,
                     decoration: AppInputs.field(
@@ -1041,9 +1120,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     value: status,
-                    decoration: AppInputs.field(
-                      labelText: 'สถานะห้องเริ่มต้น',
-                    ),
+                    decoration: AppInputs.field(labelText: 'สถานะห้องเริ่มต้น'),
                     items: ['ว่าง', 'มีผู้เช่า', 'ปรับปรุง']
                         .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                         .toList(),
@@ -1060,7 +1137,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 child: const Text('ยกเลิก'),
               ),
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   if (roomNumCtrl.text.isNotEmpty) {
                     final parsedPrice = double.tryParse(priceCtrl.text);
                     if (parsedPrice == null || parsedPrice <= 0) {
@@ -1079,14 +1156,43 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                       );
                       return;
                     }
-                    rooms.add(
-                      RoomDetailModel(
-                        roomNumber: roomNumber,
-                        roomType: roomType,
-                        price: parsedPrice,
-                        status: status,
-                      ),
-                    );
+                    try {
+                      final response = await OwnerApiService.createRoom(
+                        dorm['id'].toString(),
+                        {
+                          'roomNumber': roomNumber,
+                          'roomType': roomType,
+                          'price': parsedPrice,
+                          'status': status,
+                        },
+                      );
+                      final createdRoom =
+                          response['data'] as Map<String, dynamic>;
+                      rooms.add(
+                        RoomDetailModel(
+                          id: int.tryParse(createdRoom['id'].toString()),
+                          roomNumber: createdRoom['roomNumber'].toString(),
+                          roomType: createdRoom['roomType'].toString(),
+                          price:
+                              double.tryParse(
+                                createdRoom['price'].toString(),
+                              ) ??
+                              parsedPrice,
+                          status: _roomStatusToLabel(
+                            createdRoom['status'].toString(),
+                          ),
+                        ),
+                      );
+                    } on OwnerApiException catch (error) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text(error.message)));
+                      }
+                      return;
+                    }
+                    if (!context.mounted) return;
+                    if (!mounted || !ctx.mounted) return;
                     onAdded();
                     Navigator.pop(ctx);
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1128,7 +1234,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 if (subtitle != null)
                   Text(
                     subtitle,
-                    style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.muted,
+                    ),
                   ),
               ],
             ),
@@ -1246,6 +1355,120 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
     color: Colors.white.withOpacity(0.14),
   );
 
+  Widget _buildOwnerLogin() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: AppCard(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.apartment_rounded,
+                  size: 56,
+                  color: AppColors.ink,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'เข้าสู่ระบบเจ้าของหอ',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'ใช้บัญชีเจ้าของหอ (role seller) ที่ลงทะเบียนไว้ในระบบ dorm_master',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.muted),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: AppInputs.field(
+                    labelText: 'อีเมล',
+                    prefixIcon: const Icon(Icons.email_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  onSubmitted: (_) => _loginOwner(),
+                  decoration: AppInputs.field(
+                    labelText: 'รหัสผ่าน',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                  ),
+                ),
+                if (_loadError != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _loadError!,
+                    style: const TextStyle(color: AppColors.danger),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _loginOwner,
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('เข้าสู่ระบบ'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _logoutOwner() {
+    OwnerApiService.logout();
+    setState(() {
+      _myDorms.clear();
+      _dashboardStats.clear();
+      _visitRequests.clear();
+      _loadError = null;
+    });
+  }
+
+  Widget _buildVisitRequests() {
+    if (_visitRequests.isEmpty) {
+      return _emptyCard(
+        Icons.calendar_month_rounded,
+        'ยังไม่มีคำขอนัด',
+        'คำขอจากผู้เช่าจะแสดงในส่วนนี้',
+      );
+    }
+
+    return Column(
+      children: _visitRequests.map((request) {
+        return AppCard(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: ListTile(
+            leading: const Icon(Icons.event_available_outlined),
+            title: Text(request['dormName']?.toString() ?? 'หอพัก'),
+            subtitle: Text(
+              '${request['tenantName'] ?? 'ผู้เช่า'} • '
+              '${request['roomNumber'] ?? 'ไม่ระบุห้อง'} • '
+              '${request['requestedAt'] ?? ''}',
+            ),
+            trailing: StatusPill(request['status']?.toString() ?? 'pending'),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   Widget _buildHero() {
     final totalAvailable = _myDorms.fold<int>(
       0,
@@ -1276,26 +1499,21 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 ),
               ),
               const SizedBox(width: 14),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'คุณสมชาย ใจดี (เจ้าของหอ)',
+                      '${OwnerApiService.ownerName} (เจ้าของหอ)',
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
                         color: Colors.white,
                       ),
                     ),
-                    SizedBox(height: 2),
-                    Text(
-                      'โทร: 081-234-5678',
-                      style: TextStyle(fontSize: 12, color: Colors.white70),
-                    ),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 8),
                     StatusPill(
-                      'ยืนยันตัวตน KYC แล้ว ✓',
+                      'ระบบเจ้าของหอ',
                       color: AppColors.success,
                       background: AppColors.successSoft,
                     ),
@@ -1316,7 +1534,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 Expanded(
                   child: _heroStat(
                     Icons.visibility_outlined,
-                    '${widget.consoleState.totalViews}',
+                    '${_dashboardStats['total_views'] ?? 0}',
                     'ยอดเข้าชมประกาศทั้งหมด',
                   ),
                 ),
@@ -1324,7 +1542,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 Expanded(
                   child: _heroStat(
                     Icons.pending_actions_rounded,
-                    '${widget.consoleState.pendingDormCount}',
+                    '${_dashboardStats['pending_dorms_count'] ?? 0}',
                     'หอรอตรวจ',
                   ),
                 ),
@@ -1478,12 +1696,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
     final occupiedCount = _getOccupiedRoomsCount(dorm);
     final String imgUrl = dorm['imageUrl'] ?? '';
     final dormId = dorm['id'].toString();
-    final isApproved = widget.consoleState.isDormApproved(dormId);
-    final isClosed = widget.consoleState.isDormClosed(dormId);
-    final viewCount = widget.consoleState.dormViews[dormId] ?? 0;
-    final sellerSuspended = widget.consoleState.isSellerSuspended(
-      dorm['sellerId']?.toString() ?? _currentSellerId,
-    );
+    final isApproved = dorm['approvalStatus'] == 'approved';
+    final isClosed = dorm['listingStatus'] != 'active';
+    final viewCount = int.tryParse(dorm['viewCount'].toString()) ?? 0;
+    final sellerSuspended = _sellerSuspended;
 
     final String statusLabel = !isApproved
         ? 'รออนุมัติ'
@@ -1752,9 +1968,21 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
             activeColor: AppColors.ink,
             onChanged: (!isApproved || sellerSuspended)
                 ? null
-                : (isOpen) {
-                    widget.consoleState.toggleDormClosed(dormId, !isOpen);
-                    setState(() {});
+                : (isOpen) async {
+                    try {
+                      await OwnerApiService.setDormClosed(dormId, !isOpen);
+                      setState(() {
+                        dorm['listingStatus'] = isOpen
+                            ? 'active'
+                            : 'temporarily_closed';
+                      });
+                    } on OwnerApiException catch (error) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text(error.message)));
+                      }
+                    }
                   },
           ),
         ],
@@ -1763,9 +1991,15 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
   }
 
   Widget _buildReviewStatusSection() {
-    final sellerIds = _myDorms.map((dorm) => dorm['sellerId']).toSet();
-    final requests = widget.consoleState.dormRequests
-        .where((request) => sellerIds.contains(request['sellerId']))
+    final requests = _myDorms
+        .map(
+          (dorm) => {
+            'status': dorm['approvalStatus'],
+            'dormName': dorm['title'],
+            'location': dorm['location'],
+            'documents': const <dynamic>[],
+          },
+        )
         .toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1836,7 +2070,11 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          StatusPill(label, color: color, background: background),
+                          StatusPill(
+                            label,
+                            color: color,
+                            background: background,
+                          ),
                           const SizedBox(width: 8),
                           Text(
                             '$docCount เอกสารแนบ',
@@ -1937,6 +2175,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
 
   @override
   Widget build(BuildContext context) {
+    if (!OwnerApiService.isLoggedIn) {
+      return Scaffold(backgroundColor: AppColors.bg, body: _buildOwnerLogin());
+    }
+
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: AnimatedBuilder(
@@ -1945,6 +2187,35 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
             children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      OwnerApiService.ownerName,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'โหลดข้อมูลใหม่',
+                    onPressed: _isLoading ? null : _loadOwnerData,
+                    icon: const Icon(Icons.refresh),
+                  ),
+                  TextButton.icon(
+                    onPressed: _logoutOwner,
+                    icon: const Icon(Icons.logout_rounded),
+                    label: const Text('ออกจากระบบ'),
+                  ),
+                ],
+              ),
+              if (_isLoading) const LinearProgressIndicator(),
+              if (_loadError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    _loadError!,
+                    style: const TextStyle(color: AppColors.danger),
+                  ),
+                ),
               _buildHero(),
               const SizedBox(height: 16),
               if (_sellerSuspended) _buildSuspendedBanner(),
@@ -1968,11 +2239,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
               _buildReviewStatusSection(),
               const SizedBox(height: 20),
               _sectionHeader('คำขอนัดดูห้อง'),
-              _emptyCard(
-                Icons.calendar_month_rounded,
-                'ยังไม่มีคำขอนัด',
-                'คำขอจากผู้เช่าจะแสดงในส่วนนี้',
-              ),
+              _buildVisitRequests(),
               const SizedBox(height: 20),
               _buildBoostBanner(),
             ],
