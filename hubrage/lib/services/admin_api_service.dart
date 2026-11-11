@@ -1,3 +1,4 @@
+import '../models/kyc_request_model.dart';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -21,6 +22,42 @@ class AdminApiService {
   static http.Client? client;
 
   static bool get isAdmin => Session.isLoggedIn && Session.role == 'admin';
+
+  /// ดึงรายการคำขอ KYC จาก Backend
+  /// status: pending | approved | rejected | all
+  static Future<List<KYCRequestModel>> getKycRequests({
+    String status = 'all',
+  }) async { final response = await _send(
+      'GET',
+      '/api/admin/kyc?status=${Uri.encodeQueryComponent(status)}',
+    );
+
+    return _list(response['data'])
+        .map((json) => KYCRequestModel.fromJson(json))
+        .toList();
+  }
+
+  /// อนุมัติคำขอ KYC
+  static Future<void> approveKyc(int kycId) async {
+    await _send(
+      'PATCH',
+      '/api/admin/kyc/$kycId/approve',
+    );
+  }
+
+  /// ปฏิเสธคำขอ KYC พร้อมเหตุผล
+  static Future<void> rejectKyc(
+    int kycId, {
+    required String reason,
+  }) async {
+    await _send(
+      'PATCH',
+      '/api/admin/kyc/$kycId/reject',
+      body: {
+        'reason': reason,
+      },
+    );
+  }
 
   static Future<List<Map<String, dynamic>>> getSellers() async =>
       _list((await _send('GET', '/api/admin/sellers'))['data']);
