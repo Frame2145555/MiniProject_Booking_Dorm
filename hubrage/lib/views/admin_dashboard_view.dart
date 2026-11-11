@@ -341,6 +341,7 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
                 ),
               ),
               const SizedBox(height: 14),
+              _serverBanner(),
               _buildOverview(activeSellers, suspendedSellers),
               const SizedBox(height: 20),
               _buildSectionTabs(),
@@ -355,6 +356,43 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  /// บอกว่าตอนนี้เป็นข้อมูลจริงจาก server หรือข้อมูลตัวอย่าง
+  Widget _serverBanner() {
+    final state = widget.consoleState;
+    if (state.loadingServer) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 14),
+        child: LinearProgressIndicator(),
+      );
+    }
+    final String text;
+    final IconData icon;
+    if (state.serverError != null) {
+      text = state.serverError!;
+      icon = Icons.cloud_off_outlined;
+    } else if (state.serverMode) {
+      return const SizedBox.shrink();
+    } else {
+      text = 'ข้อมูลตัวอย่าง — เข้าสู่ระบบด้วยบัญชีแอดมิน (admin@test.com) '
+          'เพื่ออนุมัติหอและระงับบัญชีจริง';
+      icon = Icons.info_outline;
+    }
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 14),
+      child: ListTile(
+        leading: Icon(icon),
+        title: Text(text, style: const TextStyle(fontSize: 13)),
+        trailing: state.serverError != null
+            ? IconButton(
+                tooltip: 'ลองใหม่',
+                icon: const Icon(Icons.refresh),
+                onPressed: state.loadFromServer,
+              )
+            : null,
       ),
     );
   }

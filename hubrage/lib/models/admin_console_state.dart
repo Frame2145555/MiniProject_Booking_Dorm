@@ -1,8 +1,30 @@
 import 'package:flutter/foundation.dart';
 
-/// Shared in-memory state for the role-switching prototype.
-/// Replace with API/repository calls when the backend is connected.
+import '../services/admin_api_service.dart';
+import '../services/session.dart';
+import 'dorm_catalog.dart';
+
+/// Shared state ของหน้าแอดมิน
+/// - login ด้วยบัญชี admin -> โหลดเจ้าของหอ / คำขอลงประกาศหอ จาก server (/api/admin)
+///   และปุ่มอนุมัติหอ / ระงับบัญชี จะบันทึกลง MySQL จริง ([serverMode] = true)
+/// - ยังไม่ได้ login เป็น admin -> ใช้ข้อมูลตัวอย่างในไฟล์นี้เหมือนเดิม
+/// (รีวิวยังเป็นข้อมูลตัวอย่าง เพราะฐานข้อมูลยังไม่มีตารางรีวิว)
 class AdminConsoleState extends ChangeNotifier {
+  AdminConsoleState() {
+    _mockSellers = sellers.map((s) => Map<String, dynamic>.from(s)).toList();
+    _mockViews = Map<String, int>.from(dormViews);
+    Session.loggedIn.addListener(_onSessionChanged);
+    if (AdminApiService.isAdmin) loadFromServer();
+  }
+
+  late final List<Map<String, dynamic>> _mockSellers;
+  late final Map<String, int> _mockViews;
+
+  /// true = ข้อมูลในหน้าแอดมินมาจาก server แล้ว
+  bool serverMode = false;
+  bool loadingServer = false;
+  String? serverError;
+
   final List<Map<String, dynamic>> sellers = [
     {
       'id': 'seller_001',
@@ -107,14 +129,141 @@ class AdminConsoleState extends ChangeNotifier {
     'dorm_3': 2094,
   };
 
+  // ───────────── เชื่อม server (/api/admin) ─────────────
+
+  void _onSessionChanged() {
+    if (AdminApiService.isAdmin) {
+      loadFromServer();
+    } else if (serverMode || serverError != null) {
+      // ออกจากบัญชีแอดมิน -> กลับไปใช้ข้อมูลตัวอย่าง
+      serverMode = false;
+      serverError = null;
+      sellers
+        ..clear()
+        ..addAll(_mockSellers.map((s) => Map<String, dynamic>.from(s)));
+      dormRequests.clear();
+      dormViews
+        ..clear()
+        ..addAll(_mockViews);
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadFromServer() async {
+    loadingServer = true;
+    serverError = null;
+    notifyListeners();
+    try {
+      final results = await Future.wait([
+        AdminApiService.getSellers(),
+        AdminApiService.getDorms(status: 'all'),
+      ]);
+      sellers
+        ..clear()
+        ..addAll(results[0].map(_sellerFromApi));
+      dormRequests
+        ..clear()
+        ..addAll(results[1].map(_dormFromApi));
+      dormViews
+        ..clear()
+        ..addAll({
+          for (final d in results[1])
+            '${d['id']}': int.tryParse('${d['views']}') ?? 0,
+        });
+      serverMode = true;
+    } on AdminApiException catch (e) {
+      serverError = e.message;
+    } finally {
+      loadingServer = false;
+      notifyListeners();
+    }
+  }
+
+  static String _thaiDate(Object? raw) {
+    final t = DateTime.tryParse(raw?.toString() ?? '')?.toLocal();
+    if (t == null) return '-';
+    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+        'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    return '${t.day.toString().padLeft(2, '0')} ${months[t.month - 1]} ${t.year}';
+  }
+
+  static int _int(Object? v) => int.tryParse('$v') ?? 0;
+
+  static Map<String, dynamic> _sellerFromApi(Map<String, dynamic> s) => {
+        'id': '${s['id']}',
+        'dormId': s['dormId'] == null ? '' : '${s['dormId']}',
+        'name': s['name']?.toString() ?? '-',
+        'email': s['email']?.toString() ?? '-',
+        'phone': s['phone']?.toString() ?? '-',
+        'dorm': s['dorm']?.toString() ?? 'ยังไม่มีหอพัก',
+        'kyc': s['kyc'] == 'approved' ? 'verified' : 'pending',
+        'status': s['status']?.toString() ?? 'active',
+        'joined': _thaiDate(s['joined']),
+        'views': _int(s['views']),
+        'rooms': _int(s['rooms']),
+        'bookings': _int(s['bookings']),
+        'reports': _int(s['reports']),
+        'lastActive': '-',
+      };
+
+  static Map<String, dynamic> _dormFromApi(Map<String, dynamic> d) => {
+        'id': '${d['id']}',
+        'sellerId': '${d['sellerId']}',
+        'sellerName': d['sellerName']?.toString() ?? '-',
+        'dormId': '${d['id']}',
+        'dormName': d['dormName']?.toString() ?? '-',
+        'phone': d['phone']?.toString() ?? '-',
+        'location': d['location']?.toString() ?? '-',
+        'latitude': double.tryParse('${d['latitude']}'),
+        'longitude': double.tryParse('${d['longitude']}'),
+        'description': d['description']?.toString() ?? '',
+        'priceMin': _int(d['priceMin']),
+        'priceMax': _int(d['priceMax']),
+        'amenities': List<String>.from((d['amenities'] as List?) ?? const []),
+        'imageUrl': d['imageUrl']?.toString() ?? '',
+        'images': const [],
+        'documents': ((d['documents'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((doc) => Map<String, dynamic>.from(doc))
+            .toList(),
+        'status': d['status']?.toString() ?? 'pending',
+        'submittedAt': 'ส่งคำขอเมื่อ ${_thaiDate(d['submittedAt'])}',
+      };
+
+  /// เรียก API -> ถ้าไม่สำเร็จ ย้อนค่ากลับ ([undo]) แล้วเก็บข้อความ error ไว้แสดง
+  Future<void> _sync(Future<void> Function() call, VoidCallback undo) async {
+    try {
+      await call();
+      serverError = null;
+    } on AdminApiException catch (e) {
+      undo();
+      serverError = e.message;
+    }
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    Session.loggedIn.removeListener(_onSessionChanged);
+    super.dispose();
+  }
+
   int get totalViews => dormViews.values.fold(0, (sum, value) => sum + value);
   int get pendingDormCount =>
       dormRequests.where((request) => request['status'] == 'pending').length;
 
   void suspendSeller(String sellerId, bool suspend) {
     final seller = sellers.firstWhere((item) => item['id'] == sellerId);
+    final before = seller['status'];
     seller['status'] = suspend ? 'suspended' : 'active';
     notifyListeners();
+    final userId = int.tryParse(sellerId);
+    if (serverMode && userId != null) {
+      _sync(
+        () => AdminApiService.setUserSuspended(userId, suspend),
+        () => seller['status'] = before,
+      );
+    }
   }
 
   void submitDormRequest({
@@ -159,8 +308,19 @@ class AdminConsoleState extends ChangeNotifier {
 
   void reviewDormRequest(String requestId, {required bool approve}) {
     final request = dormRequests.firstWhere((item) => item['id'] == requestId);
+    final before = request['status'];
     request['status'] = approve ? 'approved' : 'rejected';
     notifyListeners();
+    final dormId = int.tryParse(requestId);
+    if (serverMode && dormId != null) {
+      _sync(
+        () async {
+          await AdminApiService.setDormApproval(dormId, approve);
+          DormCatalog.live.load(); // หอที่อนุมัติแล้วขึ้นในหน้าผู้เช่าทันที
+        },
+        () => request['status'] = before,
+      );
+    }
   }
 
   /// อัปเดตรูปของหอที่ส่งคำขอไว้ (เมื่อเจ้าของแก้ไขประกาศ) เพื่อให้ผู้เช่าเห็นรูปล่าสุด
@@ -210,8 +370,13 @@ class AdminConsoleState extends ChangeNotifier {
   // ───────────── จัดการรีวิว (แอดมิน) ─────────────
 
   /// รีวิวที่ผู้เช่าเห็นได้ของหอนั้น (ไม่รวมที่ถูกซ่อน)
+  /// (หอจาก server ใช้ id เป็นเลข เช่น '1' -> ตรงกับรีวิวตัวอย่างของ 'dorm_1')
   List<Map<String, dynamic>> visibleReviewsFor(String dormId) => reviews
-      .where((r) => r['dormId'] == dormId && r['status'] == 'visible')
+      .where(
+        (r) =>
+            (r['dormId'] == dormId || r['dormId'] == 'dorm_$dormId') &&
+            r['status'] == 'visible',
+      )
       .toList();
 
   int get hiddenReviewCount =>

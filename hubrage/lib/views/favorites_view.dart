@@ -21,7 +21,11 @@ class FavoritesView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge(<Listenable?>[consoleState, favorites]),
+      animation: Listenable.merge(<Listenable?>[
+        consoleState,
+        favorites,
+        DormCatalog.live, // รายการหอจริงจาก server
+      ]),
       builder: (context, _) {
         final dorms = DormCatalog.visibleDorms(consoleState)
             .where((dorm) => favorites.isFavorite(dorm['title'].toString()))

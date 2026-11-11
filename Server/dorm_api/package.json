@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "test:chat": "node test_chat.js"
+    "test:chat": "node test_chat.js",
+    "test:booking": "node test_booking.js"
   },
   "keywords": [],
   "author": "",
