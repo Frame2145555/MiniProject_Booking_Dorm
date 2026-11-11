@@ -7,31 +7,31 @@
 const express = require("express");
 const KYC_STATUSES = ["pending", "approved", "rejected"];
 module.exports = (db, auth) => {
-    const router = express.Router();
-    // ตรวจสอบสิทธิ์ Admin
-    router.use(auth.requireRole("admin"));
-    // ส่ง Error Response
-    const fail = (res, status, message) => {
-        return res.status(status).json({ success: false, error: message, message });
-    };
-    // ตรวจสอบ ID
-    const toId = (raw) => {
-        const id = Number(raw);
-        return Number.isSafeInteger(id) && id > 0
-            ? id
-            : null;
-    };
-    // ==========================================
-    // 1. GET /api/admin/kyc
-    // ดูรายการคำขอ KYC
-    // ตัวอย่าง: /api/admin/kyc?status=pending
-    // ==========================================
-    router.get("/", async (req, res) => {
-        const status = String(req.query.status || "pending");
-        if (status !== "all" && !KYC_STATUSES.includes(status)) {
-            return fail(res, 400, "status ต้องเป็น pending, approved, rejected หรือ all");
-        }
-        const [rows] = await db.query(`SELECT
+  const router = express.Router();
+  // ตรวจสอบสิทธิ์ Admin
+  router.use(auth.requireRole("admin"));
+  // ส่ง Error Response
+  const fail = (res, status, message) => {
+    return res.status(status).json({success: false, error: message, message});
+  };
+  // ตรวจสอบ ID
+  const toId = (raw) => {
+    const id = Number(raw);
+    return Number.isSafeInteger(id) && id > 0
+      ? id
+      : null;
+  };
+  // ==========================================
+  // 1. GET /api/admin/kyc
+  // ดูรายการคำขอ KYC
+  // ตัวอย่าง: /api/admin/kyc?status=pending
+  // ==========================================
+  router.get("/", async (req, res) => {
+    const status = String(req.query.status || "pending");
+    if (status !== "all" && ! KYC_STATUSES.includes(status)) {
+      return fail(res, 400, "status ต้องเป็น pending, approved, rejected หรือ all");
+    }
+    const [rows] = await db.query(`SELECT
          k.id,
          k.seller_id AS sellerId,
          u.full_name AS sellerName,
@@ -57,10 +57,11 @@ module.exports = (db, auth) => {
        LEFT JOIN kyc_documents d
          ON d.kyc_request_id = k.id
 
-       ${status === "all"
-                ? ""
-                : "WHERE k.status = ?"
-            }
+       ${
+      status === "all"
+        ? ""
+        : "WHERE k.status = ?"
+      }
 
        GROUP BY
          k.id,
@@ -79,21 +80,21 @@ module.exports = (db, auth) => {
        ORDER BY
          k.submitted_at DESC,
          k.id DESC`,
-            status === "all"
-                ? []
-                : [status]);
-        return res.json({ success: true, count: rows.length, data: rows });
-    });
-    // ==========================================
-    // 2. GET /api/admin/kyc/:id
-    // ดูรายละเอียดคำขอ KYC
-    // ==========================================
-    router.get("/:id", async (req, res) => {
-        const id = toId(req.params.id);
-        if (!id) {
-            return fail(res, 400, "id ไม่ถูกต้อง");
-        }
-        const [rows] = await db.query(`SELECT
+    status === "all"
+      ? []
+      : [status]);
+    return res.json({success: true, count: rows.length, data: rows});
+  });
+  // ==========================================
+  // 2. GET /api/admin/kyc/:id
+  // ดูรายละเอียดคำขอ KYC
+  // ==========================================
+  router.get("/:id", async (req, res) => {
+    const id = toId(req.params.id);
+    if (! id) {
+      return fail(res, 400, "id ไม่ถูกต้อง");
+    }
+    const [rows] = await db.query(`SELECT
          k.id,
          k.seller_id AS sellerId,
          u.full_name AS sellerName,
@@ -118,11 +119,11 @@ module.exports = (db, auth) => {
        WHERE k.id = ?
 
        LIMIT 1`, [id]);
-        if (!rows.length) {
-            return fail(res, 404, "ไม่พบคำขอ KYC นี้");
-        }
-        // ดึงข้อมูลเอกสารประกอบ
-        const [documents] = await db.query(`SELECT
+    if (!rows.length) {
+      return fail(res, 404, "ไม่พบคำขอ KYC นี้");
+    }
+    // ดึงข้อมูลเอกสารประกอบ
+    const [documents] = await db.query(`SELECT
          id,
          document_type AS documentType,
          uploaded_at AS uploadedAt
@@ -132,63 +133,63 @@ module.exports = (db, auth) => {
        WHERE kyc_request_id = ?
 
        ORDER BY uploaded_at, id`, [id]);
-        return res.json({
-            success: true,
-            data: {
-                ...rows[0],
-                documents
-            }
-        });
+    return res.json({
+      success: true,
+      data: {
+        ...rows[0],
+        documents
+      }
     });
-    // ==========================================
-    // 3. PATCH /api/admin/kyc/:id/decision
-    // อนุมัติหรือปฏิเสธคำขอ KYC
-    // ==========================================
-    router.patch("/:id/decision", async (req, res) => {
-        const id = toId(req.params.id);
-        if (!id) {
-            return fail(res, 400, "id ไม่ถูกต้อง");
-        }
-        const status = req.body?.status;
-        // ตรวจสอบสถานะ
-        if (status !== "approved" && status !== "rejected") {
-            return fail(res, 400, 'status ต้องเป็น "approved" หรือ "rejected"');
-        }
-        // ตรวจสอบเหตุผลกรณีปฏิเสธ
-        let rejectionReason = null;
-        if (status === "rejected") {
-            if (typeof req.body?.rejection_reason !== "string" || !req
-                .body
-                .rejection_reason
-                .trim()) {
-                return fail(res, 400, "กรุณาระบุเหตุผลเมื่อปฏิเสธคำขอ");
-            }
-            rejectionReason = req
-                .body
-                .rejection_reason
-                .trim()
-                .slice(0, 1000);
-        }
-        const connection = await db.getConnection();
-        try {
-            await connection.beginTransaction();
-            // Lock ข้อมูลเพื่อป้องกันการตัดสินคำขอซ้ำ
-            const [requests] = await connection.query(`SELECT id, status
+  });
+  // ==========================================
+  // 3. PATCH /api/admin/kyc/:id/decision
+  // อนุมัติหรือปฏิเสธคำขอ KYC
+  // ==========================================
+  router.patch("/:id/decision", async (req, res) => {
+    const id = toId(req.params.id);
+    if (! id) {
+      return fail(res, 400, "id ไม่ถูกต้อง");
+    }
+    const status = req.body ?. status;
+    // ตรวจสอบสถานะ
+    if (status !== "approved" && status !== "rejected") {
+      return fail(res, 400, 'status ต้องเป็น "approved" หรือ "rejected"');
+    }
+    // ตรวจสอบเหตุผลกรณีปฏิเสธ
+    let rejectionReason = null;
+    if (status === "rejected") {
+      if (typeof req.body ?. rejection_reason !== "string" || !req
+          .body
+          .rejection_reason
+          .trim()) {
+        return fail(res, 400, "กรุณาระบุเหตุผลเมื่อปฏิเสธคำขอ");
+      }
+      rejectionReason = req
+        .body
+        .rejection_reason
+        .trim()
+        .slice(0, 1000);
+    }
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      // Lock ข้อมูลเพื่อป้องกันการตัดสินคำขอซ้ำ
+      const [requests] = await connection.query(`SELECT id, status
          FROM kyc_requests
          WHERE id = ?
          FOR UPDATE`, [id]);
-            // ตรวจสอบว่ามีคำขอหรือไม่
-            if (!requests.length) {
-                await connection.rollback();
-                return fail(res, 404, "ไม่พบคำขอ KYC นี้");
-            }
-            // ตรวจสอบว่าคำขอยังรอการตรวจสอบอยู่หรือไม่
-            if (requests[0].status !== "pending") {
-                await connection.rollback();
-                return fail(res, 409, "คำขอนี้ได้รับการตรวจสอบไปแล้ว");
-            }
-            // อัปเดตสถานะ KYC
-            await connection.query(`UPDATE kyc_requests
+      // ตรวจสอบว่ามีคำขอหรือไม่
+      if (!requests.length) {
+        await connection.rollback();
+        return fail(res, 404, "ไม่พบคำขอ KYC นี้");
+      }
+      // ตรวจสอบว่าคำขอยังรอการตรวจสอบอยู่หรือไม่
+      if (requests[0].status !== "pending") {
+        await connection.rollback();
+        return fail(res, 409, "คำขอนี้ได้รับการตรวจสอบไปแล้ว");
+      }
+      // อัปเดตสถานะ KYC
+      await connection.query(`UPDATE kyc_requests
 
          SET
            status = ?,
@@ -197,34 +198,34 @@ module.exports = (db, auth) => {
            rejection_reason = ?
 
          WHERE id = ?`, [status, req.user.id, rejectionReason, id]);
-            // บันทึกประวัติการดำเนินการของ Admin
-            await connection.query(`INSERT INTO admin_audit_logs
+      // บันทึกประวัติการดำเนินการของ Admin
+      await connection.query(`INSERT INTO admin_audit_logs
            (admin_id, action, target_type, target_id, reason)
 
          VALUES (?, ?, 'kyc_request', ?, ?)`, [
-                req.user.id,
-                status === "approved"
-                    ? "approve_kyc"
-                    : "reject_kyc",
-                id,
-                rejectionReason
-            ]);
-            await connection.commit();
-            return res.json({
-                success: true,
-                data: {
-                    id,
-                    status,
-                    reviewedBy: req.user.id,
-                    rejectionReason
-                }
-            });
-        } catch (error) {
-            await connection.rollback();
-            throw error;
-        } finally {
-            connection.release();
+        req.user.id,
+        status === "approved"
+          ? "approve_kyc"
+          : "reject_kyc",
+        id,
+        rejectionReason
+      ]);
+      await connection.commit();
+      return res.json({
+        success: true,
+        data: {
+          id,
+          status,
+          reviewedBy: req.user.id,
+          rejectionReason
         }
-    });
-    return router;
+      });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  });
+  return router;
 };
