@@ -23,6 +23,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
+//qqqqqqqqqqq
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Dorm Master Backend API running on port ${PORT}`);
