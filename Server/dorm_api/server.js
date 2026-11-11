@@ -42,6 +42,7 @@ const optionalUser = (req, res, next) => {
 app.use("/api/tenant", optionalUser, require("./Troutes/tenantRoutes")); // ระบบค้นหา/จอง (ของพี่): /api/tenant/...
 app.use("/api/admin", require("./admin_routes")(db, auth));    // ระบบแอดมิน: อนุมัติหอ / ระงับบัญชี
 // ไม่ได้ mount Troutes/authRoutes (/api/login ของพี่) เพราะซ้ำกับ loginandregister.js ด้านบน
+app.use("/api/admin/kyc", require("./admin_kyc_routes")(db, auth));
 
 app.get("/", (req, res) => res.json({ message: "Dorm Master server is running" }));
 
