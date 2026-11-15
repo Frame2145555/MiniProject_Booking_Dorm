@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../models/chat_models.dart';
 import '../services/chat_service.dart';
 import '../services/session.dart';
 
 // Controller (MVC) ของระบบแชท
+//   Model      = models/chat_models.dart   (ChatMessage, ChatConversation)
+//   View       = views/chat_view.dart, views/chat_room_view.dart
+//   Controller = ไฟล์นี้ (logic ทั้งหมด)  /  ChatService = ตัวคุยกับ server
 // View แค่แสดงผล + ส่งการกดของผู้ใช้มาที่นี่ / คุยกับ server ผ่าน ChatService
 // รับ ChatService เข้ามาทาง constructor เพื่อให้ตอน unit test ส่งตัวปลอมเข้ามาแทนได้
 
@@ -15,14 +19,14 @@ class ChatRoomController extends ChangeNotifier {
   ChatRoomController(this.conversationId, {ChatService? service})
       : _service = service ?? ChatService.instance;
 
-  final List<Map<String, dynamic>> messages = [];
+  final List<ChatMessage> messages = [];
   bool loading = true;
   bool sending = false;
 
   final List<Function()> _removeListeners = [];
   bool _disposed = false;
 
-  bool isMine(Map<String, dynamic> msg) => msg['sender_id'] == Session.userId;
+  bool isMine(ChatMessage msg) => msg.isSentBy(Session.userId);
 
   /// เรียกครั้งเดียวตอนเปิดห้อง
   Future<void> start() async {
@@ -43,9 +47,9 @@ class ChatRoomController extends ChangeNotifier {
     final history = await _service.fetchMessages(conversationId);
     if (_disposed) return;
     // ข้อความที่เข้ามาทาง socket ระหว่างรอโหลด ให้เก็บไว้ต่อท้าย (ไม่ให้ซ้ำ)
-    final historyIds = history.map((m) => m['id']).toSet();
+    final historyIds = history.map((m) => m.id).toSet();
     final arrivedMeanwhile =
-        messages.where((m) => !historyIds.contains(m['id'])).toList();
+        messages.where((m) => !historyIds.contains(m.id)).toList();
     messages
       ..clear()
       ..addAll(history)
@@ -57,10 +61,10 @@ class ChatRoomController extends ChangeNotifier {
 
   /// server ส่ง 'new_message' มา
   void onNewMessage(dynamic data) {
-    if (data is! Map || _disposed) return;
-    final msg = Map<String, dynamic>.from(data);
-    if (msg['conversation_id'] != conversationId) return;
-    if (messages.any((m) => m['id'] == msg['id'])) return;
+    if (_disposed) return;
+    final msg = ChatMessage.tryParse(data);
+    if (msg == null || msg.conversationId != conversationId) return;
+    if (messages.any((m) => m.id == msg.id)) return;
 
     messages.add(msg);
     _notify();
@@ -74,9 +78,7 @@ class ChatRoomController extends ChangeNotifier {
     if (data['conversation_id'] != conversationId) return;
     if (data['reader_id'] == Session.userId) return;
     for (final m in messages) {
-      if (isMine(m) && m['read_at'] == null) {
-        m['read_at'] = DateTime.now().toIso8601String();
-      }
+      if (isMine(m) && !m.isRead) m.readAt = DateTime.now();
     }
     _notify();
   }
@@ -119,7 +121,7 @@ class ChatListController extends ChangeNotifier {
   ChatListController({ChatService? service})
       : _service = service ?? ChatService.instance;
 
-  List<Map<String, dynamic>> conversations = [];
+  List<ChatConversation> conversations = [];
   bool loading = true;
 
   Function()? _removeListener;

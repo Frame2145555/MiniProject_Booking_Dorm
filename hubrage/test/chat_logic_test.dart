@@ -1,8 +1,8 @@
 // Unit test ฟังก์ชันล้วนๆ (ไม่ต้องมี server)  วิธีรัน: flutter test
 import 'package:flutter_test/flutter_test.dart';
 
+import '../lib/models/chat_models.dart';
 import '../lib/services/api_config.dart';
-import '../lib/services/chat_service.dart';
 import '../lib/services/session.dart';
 
 void main() {

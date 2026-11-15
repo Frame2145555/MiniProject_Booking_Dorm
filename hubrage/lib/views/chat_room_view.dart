@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../Logic/Frame_Chat.dart';
+import '../models/chat_models.dart';
 import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chat_avatar.dart';
@@ -209,9 +210,9 @@ class _ChatRoomViewState extends State<ChatRoomView> {
         ),
       );
 
-  Widget _bubble(Map<String, dynamic> msg) {
+  Widget _bubble(ChatMessage msg) {
     final me = _controller.isMine(msg);
-    final read = me && msg['read_at'] != null;
+    final read = me && msg.isRead;
     return Align(
       alignment: me ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -230,7 +231,7 @@ class _ChatRoomViewState extends State<ChatRoomView> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              msg['text']?.toString() ?? '',
+              msg.text,
               style: TextStyle(
                 color: me ? Colors.white : AppColors.ink,
                 height: 1.45,
@@ -239,7 +240,7 @@ class _ChatRoomViewState extends State<ChatRoomView> {
             ),
             const SizedBox(height: 4),
             Text(
-              '${formatChatTime(msg['sent_at'])}${read ? ' • อ่านแล้ว' : ''}',
+              '${msg.timeLabel}${read ? ' • อ่านแล้ว' : ''}',
               style: TextStyle(
                 color: me ? Colors.white60 : AppColors.muted,
                 fontSize: 10,

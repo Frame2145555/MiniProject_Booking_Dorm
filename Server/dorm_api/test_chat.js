@@ -129,8 +129,46 @@ const main = async () => {
     res = await api('/api/users', tenant.token);
     check('ดึงรายชื่อ users ตรงๆ ไม่ได้ (403)', res.status == 403);
 
-    tenantSocket.close();
+    // ---------- logout แล้ว login ใหม่ -> ข้อความต้องยังอยู่ (บันทึกลง MySQL จริง) ----------
+    tenantSocket.close();               // logout = ตัด socket ทิ้ง (เหมือน ChatService.disconnect)
     sellerSocket.close();
+    const tenant2 = await login('tenant@test.com');   // login ใหม่ = ได้ token ใหม่
+    const seller2 = await login('seller@test.com');
+    check('logout แล้ว login ใหม่ได้ (บัญชีเดิม)', tenant2.token && tenant2.id == tenant.id);
+
+    res = await api('/api/conversations/' + conv.id + '/messages', tenant2.token);
+    const again = await res.json();
+    const saved = Array.isArray(again) && again.find((m) => m.id == msg.id);
+    check('login ใหม่แล้ว ผู้เช่ายังเห็นข้อความที่ส่งไป', saved && saved.text == text);
+    check('ข้อความเก็บผู้ส่งถูกคน (sender_id = ผู้เช่า)', saved && saved.sender_id == tenant.id);
+    check('สถานะ "อ่านแล้ว" ยังอยู่ (read_at ไม่ว่าง)', saved && saved.read_at != null);
+    check('ข้อความเรียงจากเก่าไปใหม่', Array.isArray(again) &&
+        again.every((m, i) => i == 0 || again[i - 1].id < m.id));
+
+    res = await api('/api/conversations', tenant2.token);
+    list = await res.json();
+    row = list.find((c) => c.id == conv.id);
+    check('รายการแชทหลัง login ใหม่ยังมีห้องนี้ + ข้อความล่าสุดถูกต้อง', row && row.last_message == text);
+
+    res = await api('/api/conversations', seller2.token);
+    list = await res.json();
+    row = list.find((c) => c.id == conv.id);
+    check('เจ้าของหอ login ใหม่ ข้อความที่อ่านแล้วไม่กลับมาเป็นยังไม่อ่าน', row && row.unread == 0);
+
+    // socket ใหม่ยังคุยต่อในห้องเดิมได้
+    const tenantSocket2 = await connect(tenant2.token);
+    const sellerSocket2 = await connect(seller2.token);
+    await join(tenantSocket2, conv.id);
+    await join(sellerSocket2, conv.id);
+    const sellerGets2 = waitFor(sellerSocket2, 'new_message');
+    const text2 = 'หลัง login ใหม่ ' + Date.now();
+    const ack2 = await new Promise((resolve) =>
+        tenantSocket2.emit('send_message', {conversation_id: conv.id, text: text2}, resolve));
+    const msg2 = await sellerGets2;
+    check('login ใหม่แล้วแชทต่อในห้องเดิมได้', ack2.ok === true && msg2 && msg2.text == text2);
+
+    tenantSocket2.close();
+    sellerSocket2.close();
     otherSocket.close();
     console.log('\nผ่าน ' + passed + ' / ' + (passed + failed));
     // ใช้ exitCode แทน process.exit() กัน error ของ Node บน Windows (UV_HANDLE_CLOSING)

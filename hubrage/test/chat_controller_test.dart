@@ -44,7 +44,7 @@ void main() {
       expect(service.joined, [roomId]);
       expect(service.markedRead, contains(roomId));
       expect(controller.loading, isFalse);
-      expect(controller.messages.single['text'], 'สวัสดีครับ');
+      expect(controller.messages.single.text, 'สวัสดีครับ');
     });
 
     test('ส่งข้อความ -> server ได้รับ และข้อความขึ้นในห้อง', () async {
@@ -55,7 +55,7 @@ void main() {
 
       expect(ok, isTrue);
       expect(service.sentTexts, ['ห้องยังว่างไหมครับ']); // ตัดช่องว่างก่อนส่ง
-      expect(controller.messages.last['text'], 'ห้องยังว่างไหมครับ');
+      expect(controller.messages.last.text, 'ห้องยังว่างไหมครับ');
       expect(controller.isMine(controller.messages.last), isTrue);
       expect(controller.sending, isFalse);
     });
@@ -92,7 +92,7 @@ void main() {
 
       service.serverEmit('new_message', messageFrom(otherUser, 'ว่างครับ', id: 5));
 
-      expect(controller.messages.single['text'], 'ว่างครับ');
+      expect(controller.messages.single.text, 'ว่างครับ');
       expect(controller.isMine(controller.messages.single), isFalse);
       expect(screenUpdated, 1);
       expect(service.markedRead, [roomId]);
@@ -121,11 +121,11 @@ void main() {
       final controller = ChatRoomController(roomId, service: service);
       await controller.start();
       await controller.send('อ่านหรือยัง');
-      expect(controller.messages.last['read_at'], isNull);
+      expect(controller.messages.last.isRead, isFalse);
 
       service.serverEmit('messages_read', {'conversation_id': roomId, 'reader_id': otherUser});
 
-      expect(controller.messages.last['read_at'], isNotNull);
+      expect(controller.messages.last.isRead, isTrue);
     });
 
     test('เน็ตหลุดแล้วต่อใหม่ -> join ห้องซ้ำอัตโนมัติ', () async {
@@ -146,6 +146,80 @@ void main() {
       controller.dispose();
 
       expect(service.handlers, isEmpty);
+    });
+  });
+
+  group('ประวัติแชทหลัง logout แล้ว login ใหม่', () {
+    // FakeChatService เก็บข้อความที่ส่งไว้ใน history (เหมือนตาราง messages ใน MySQL)
+    // ตัว server จริง + DB จริง ทดสอบซ้ำอีกชั้นใน node test_chat.js
+    void logout() => Session.clear();
+    void loginAgain() {
+      Session.token = 'new-token';
+      Session.userId = me;
+      Session.loggedIn.value = true;
+    }
+
+    test('ส่งข้อความ -> อีกฝั่งอ่าน -> logout -> login ใหม่ -> ข้อความยังอยู่และยังขึ้น "อ่านแล้ว"', () async {
+      service.history = [messageFrom(otherUser, 'สวัสดีครับ', id: 1)];
+
+      // --- รอบแรก: เปิดห้อง ส่งข้อความ ---
+      final first = ChatRoomController(roomId, service: service);
+      await first.start();
+      await first.send('ห้องยังว่างไหมครับ');
+      service.otherSideReads(roomId, otherUser); // เจ้าของหอเปิดอ่าน
+      expect(first.messages.last.isRead, isTrue);
+
+      // --- logout: ปิดห้อง ---
+      first.dispose();
+      logout();
+
+      // --- login ใหม่ แล้วเปิดห้องเดิม ---
+      loginAgain();
+      final second = ChatRoomController(roomId, service: service);
+      addTearDown(second.dispose);
+      await second.start();
+
+      expect(second.loading, isFalse);
+      expect(second.messages.map((m) => m.text), ['สวัสดีครับ', 'ห้องยังว่างไหมครับ']);
+      final mine = second.messages.last;
+      expect(second.isMine(mine), isTrue, reason: 'ข้อความที่เราส่งต้องยังเป็นของเรา (ฝั่งขวา)');
+      expect(mine.isRead, isTrue, reason: 'สถานะอ่านแล้วต้องยังอยู่');
+      expect(second.isMine(second.messages.first), isFalse);
+    });
+
+    test('login ใหม่ด้วยบัญชีอื่น -> ข้อความเดิมไม่ใช่ของเรา (แยกฝั่งถูก)', () async {
+      final first = ChatRoomController(roomId, service: service);
+      await first.start();
+      await first.send('จากผู้เช่า');
+      first.dispose();
+      logout();
+
+      // เจ้าของหอ login เข้ามาเปิดห้องเดียวกัน
+      Session.token = 'owner-token';
+      Session.userId = otherUser;
+      Session.loggedIn.value = true;
+      final ownerRoom = ChatRoomController(roomId, service: service);
+      addTearDown(ownerRoom.dispose);
+      await ownerRoom.start();
+
+      expect(ownerRoom.messages.single.text, 'จากผู้เช่า');
+      expect(ownerRoom.isMine(ownerRoom.messages.single), isFalse);
+    });
+
+    test('ส่งไม่สำเร็จ -> login ใหม่แล้วไม่มีข้อความนั้น (ไม่ได้บันทึก)', () async {
+      service.serverAcceptsMessage = false;
+      final first = ChatRoomController(roomId, service: service);
+      await first.start();
+      expect(await first.send('ส่งไม่ออก'), isFalse);
+      first.dispose();
+      logout();
+
+      loginAgain();
+      final second = ChatRoomController(roomId, service: service);
+      addTearDown(second.dispose);
+      await second.start();
+
+      expect(second.messages, isEmpty);
     });
   });
 
@@ -171,7 +245,7 @@ void main() {
       await flush();
 
       expect(controller.loading, isFalse);
-      expect(controller.conversations.single['unread'], 2);
+      expect(controller.conversations.single.unread, 2);
     });
 
     test('สร้างหน้าก่อน login แล้วค่อย login -> โหลดรายการเอง', () async {

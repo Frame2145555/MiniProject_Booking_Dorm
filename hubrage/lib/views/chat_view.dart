@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../Logic/Frame_Chat.dart';
+import '../models/chat_models.dart';
 import '../services/chat_service.dart';
 import '../services/session.dart';
 import '../theme/app_theme.dart';
@@ -47,14 +48,14 @@ class _ChatViewState extends State<ChatView> {
     super.dispose();
   }
 
-  Future<void> _openRoom(Map<String, dynamic> conv) async {
+  Future<void> _openRoom(ChatConversation conv) async {
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChatRoomView(
-          conversationId: conv['id'],
-          title: conv['other_name']?.toString() ?? 'แชท',
-          subtitle: conv['dorm_name']?.toString(),
+          conversationId: conv.id,
+          title: conv.otherName.isEmpty ? 'แชท' : conv.otherName,
+          subtitle: conv.dormName,
           service: widget.service,
         ),
       ),
@@ -210,7 +211,7 @@ class _ChatViewState extends State<ChatView> {
 
 /// การ์ดห้องแชท 1 ห้องในรายการ
 class _ContactTile extends StatelessWidget {
-  final Map<String, dynamic> conversation;
+  final ChatConversation conversation;
   final bool asSeller;
   final VoidCallback onTap;
   const _ContactTile({
@@ -221,14 +222,13 @@ class _ContactTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = conversation['other_name']?.toString() ?? '';
-    final dormName = conversation['dorm_name']?.toString() ?? '';
+    final name = conversation.otherName;
+    final dormName = conversation.dormName;
     final subtitle = asSeller ? 'สนใจ $dormName' : dormName;
-    final lastMessage =
-        conversation['last_message']?.toString() ?? 'ยังไม่มีข้อความ';
-    final time = formatChatTime(conversation['last_sent_at']);
-    final unread = (conversation['unread'] as num?)?.toInt() ?? 0;
-    final hasUnread = unread > 0;
+    final lastMessage = conversation.preview;
+    final time = conversation.timeLabel;
+    final unread = conversation.unread;
+    final hasUnread = conversation.hasUnread;
 
     return Material(
       color: Colors.white,

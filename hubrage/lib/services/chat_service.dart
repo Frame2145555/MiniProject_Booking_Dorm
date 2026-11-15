@@ -3,9 +3,12 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:socket_io_client/socket_io_client.dart' as io;
+import '../models/chat_models.dart';
 import 'api_config.dart';
 import 'session.dart';
 
+/// Service (MVC) ของแชท: คุยกับ server อย่างเดียว (socket + REST) ไม่มี logic
+/// ข้อมูลที่ดึงมาแปลงเป็น model (ChatMessage / ChatConversation) ก่อนส่งให้ controller
 class ChatService {
   ChatService._();
   static final ChatService instance = ChatService._();
@@ -102,42 +105,36 @@ class ChatService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchConversations() async {
+  /// รายการห้องแชทของเรา (JSON -> ChatConversation)
+  Future<List<ChatConversation>> fetchConversations() async {
     try {
       final res = await http.get(
           Uri.parse('${ApiConfig.baseUrl}/api/conversations'), headers: _headers);
       if (res.statusCode != 200) return [];
-      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+      return _decodeList(res.body).map(ChatConversation.fromJson).toList();
     } catch (e) {
       debugPrint('fetchConversations error: $e');
       return [];
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchMessages(int conversationId) async {
+  /// ข้อความเก่า 50 ข้อความล่าสุดของห้อง (JSON -> ChatMessage)
+  Future<List<ChatMessage>> fetchMessages(int conversationId) async {
     try {
       final res = await http.get(
           Uri.parse('${ApiConfig.baseUrl}/api/conversations/$conversationId/messages'),
           headers: _headers);
       if (res.statusCode != 200) return [];
-      return List<Map<String, dynamic>>.from(jsonDecode(res.body));
+      return _decodeList(res.body).map(ChatMessage.fromJson).toList();
     } catch (e) {
       debugPrint('fetchMessages error: $e');
       return [];
     }
   }
-}
 
-/// แปลงเวลาจาก server เป็นข้อความสั้นๆ: วันนี้ -> 14:05, วันอื่น -> 9/11
-String formatChatTime(dynamic value) {
-  if (value == null) return '';
-  final time = DateTime.tryParse(value.toString())?.toLocal();
-  if (time == null) return '';
-  final now = DateTime.now();
-  final hhmm =
-      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-  if (time.year == now.year && time.month == now.month && time.day == now.day) {
-    return hhmm;
+  static List<Map<String, dynamic>> _decodeList(String body) {
+    final data = jsonDecode(body);
+    if (data is! List) return [];
+    return data.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   }
-  return '${time.day}/${time.month}';
 }

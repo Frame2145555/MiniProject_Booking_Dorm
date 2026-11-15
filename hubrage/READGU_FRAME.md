@@ -7,6 +7,7 @@ tenant@test.com / 1234 //login เป็น user รหัสไหนก็ไ�
 flutter test test/auth_service_test.dart --reporter expanded
 flutter test test/views_test.dart --reporter expanded
 flutter test test/chat_logic_test.dart --reporter expanded
+flutter test test/chat_controller_test.dart --reporter expanded
 
 flutter test test/dorm_catalog_test.dart --reporter expanded
 flutter test test/search_view_test.dart --reporter expanded
