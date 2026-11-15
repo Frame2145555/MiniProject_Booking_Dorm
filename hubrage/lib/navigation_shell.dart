@@ -8,6 +8,9 @@ import 'views/auth_view.dart';
 import 'views/owner_dashboard_view.dart';
 import 'views/admin_dashboard_view.dart';
 import 'views/my_bookings_view.dart';
+import 'views/my_reservations_view.dart';
+import 'views/admin_payments_view.dart';
+import 'views/owner_reservations_view.dart';
 import 'models/dorm_catalog.dart';
 import 'services/admin_api_service.dart';
 import 'models/admin_console_state.dart';
@@ -265,27 +268,16 @@ class _NavigationShellState extends State<NavigationShell> {
               title: 'แอดมิน (Admin)',
               subtitle: 'ตรวจเอกสารและดูแลบัญชีผู้ขาย',
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: ListTile(
-                tileColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                leading: const Icon(Icons.event_note_rounded),
-                title: const Text(
-                  'การจองและนัดดูห้องของฉัน',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                ),
-                onTap: () {
-                  Navigator.pop(context); // ปิดลิ้นชักเมนู
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const MyBookingsView()),
-                  );
-                },
-              ),
-            ),
+            const SizedBox(height: 8),
+            // เมนูระบบจองแบบชำระเงิน (แต่ละโหมดเห็นเมนูของตัวเอง)
+            if (_currentRole == UserRole.tenant) ...[
+              _drawerLink(Icons.receipt_long_rounded, 'การจองห้อง / ชำระเงินของฉัน', const MyReservationsView()),
+              _drawerLink(Icons.event_note_rounded, 'นัดดูห้องของฉัน', const MyBookingsView()),
+            ],
+            if (_currentRole == UserRole.seller)
+              _drawerLink(Icons.how_to_reg_rounded, 'คำขอจอง (ชำระเงินแล้ว) / ตั้งราคาเช่า', const OwnerReservationsView()),
+            if (_currentRole == UserRole.admin)
+              _drawerLink(Icons.price_check_rounded, 'ตรวจสอบการชำระเงินค่าจอง', const AdminPaymentsView()),
             const Spacer(),
             const Padding(
               padding: EdgeInsets.fromLTRB(24, 0, 24, 20),
@@ -296,6 +288,23 @@ class _NavigationShellState extends State<NavigationShell> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// ลิงก์ในลิ้นชักเมนู -> ปิดเมนูแล้วเปิดหน้า [page]
+  Widget _drawerLink(IconData icon, String title, Widget page) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: ListTile(
+        tileColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        leading: Icon(icon),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+        onTap: () {
+          Navigator.pop(context); // ปิดลิ้นชักเมนู
+          Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+        },
       ),
     );
   }

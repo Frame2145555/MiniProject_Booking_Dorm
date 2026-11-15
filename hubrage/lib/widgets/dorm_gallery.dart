@@ -161,47 +161,49 @@ class _DormGalleryEditorState extends State<DormGalleryEditor> {
           style: TextStyle(color: AppColors.muted, fontSize: 12),
         ),
         const SizedBox(height: 10),
+        // ใช้ Wrap (ขึ้นบรรทัดใหม่เอง) แทน ListView แนวนอน:
+        // ตัวแก้ไขนี้อยู่ใน AlertDialog ซึ่งต้องถามความกว้างของเนื้อหาก่อน (intrinsic width)
+        // ListView ตอบคำถามนี้ไม่ได้ -> layout พัง -> pop up กลายเป็นกล่องขาวทันทีที่มีรูปแรก
         if (images.isNotEmpty)
-          SizedBox(
-            height: 84,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: images.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, i) => Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: SizedBox(
-                      width: 84,
-                      height: 84,
-                      child: DormGalleryImage(images[i]),
+          Wrap(
+            spacing: 8,
+            runSpacing: 10,
+            children: [
+              for (var i = 0; i < images.length; i++)
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: SizedBox(
+                        width: 84,
+                        height: 84,
+                        child: DormGalleryImage(images[i]),
+                      ),
                     ),
-                  ),
-                  Positioned(
-                    top: -6,
-                    right: -6,
-                    child: GestureDetector(
-                      onTap: () => setState(() => images.removeAt(i)),
-                      child: Container(
-                        width: 22,
-                        height: 22,
-                        decoration: const BoxDecoration(
-                          color: AppColors.danger,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.close_rounded,
-                          size: 14,
-                          color: Colors.white,
+                    Positioned(
+                      top: -6,
+                      right: -6,
+                      child: GestureDetector(
+                        onTap: () => setState(() => images.removeAt(i)),
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: const BoxDecoration(
+                            color: AppColors.danger,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            size: 14,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+            ],
           ),
         if (images.isNotEmpty) const SizedBox(height: 10),
         Wrap(

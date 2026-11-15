@@ -1,6 +1,6 @@
 // ใส่หอพักตัวอย่างลง MySQL ให้ตรงกับหอ mock ในแอป (DormCatalog: dorm_1 - dorm_4)
 // + สร้างบัญชีเจ้าของหอแต่ละหอ (รหัสผ่าน 1234) เพื่อให้ผู้เช่ากดแชทได้ทุกหอ
-// + ห้องพักหอละ 3 ห้อง (ไว้ทดสอบการจอง) + บัญชีแอดมิน admin@test.com (รหัส 1234)
+// + ห้องพักหอละ 12 ห้อง 3 ชั้น (ไว้ทดสอบผังห้อง 2D + การจอง) + บัญชีแอดมิน admin@test.com (รหัส 1234)
 // วิธีรัน: node seed_dorms.js   (รันซ้ำได้ ไม่สร้างข้อมูลซ้ำ จะอัปเดตทับของเดิม)
 const argon2 = require('@node-rs/argon2');
 const mysql = require('mysql2/promise');
@@ -67,19 +67,30 @@ const main = async () => {
             [d.id, d.amenities]
         );
 
-        // 4. ห้องพัก 3 ห้อง (มีอยู่แล้วไม่สร้างซ้ำ ไม่แตะสถานะเดิม)
-        const rooms = [
-            ['101', 'ห้องพัดลม', d.priceMin],
-            ['102', 'ห้องแอร์', Math.round((d.priceMin + d.priceMax) / 2)],
-            ['201', 'ห้องแอร์ (ใหญ่)', d.priceMax],
-        ];
-        for (const [number, type, price] of rooms) {
+        // 4. ห้องพัก 3 ชั้น ชั้นละ 4 ห้อง (มีอยู่แล้วไม่สร้างซ้ำ ไม่แตะสถานะเดิม)
+        //    มีห้องที่มีผู้เช่า / ปรับปรุง ปนไว้ ผังห้อง 2D จะได้เห็นครบทุกสี
+        const mid = Math.round((d.priceMin + d.priceMax) / 2);
+        const rooms = [];
+        for (let floor = 1; floor <= 3; floor++) {
+            for (let n = 1; n <= 4; n++) {
+                const number = floor + '0' + n;
+                const big = floor == 3;
+                const fan = floor == 1 && n <= 2;
+                let status = 'available';
+                if (number == '103' || number == '202') status = 'occupied';
+                if (number == '304') status = 'maintenance';
+                rooms.push([number, fan ? 'ห้องพัดลม' : big ? 'ห้องแอร์ (ใหญ่)' : 'ห้องแอร์',
+                    fan ? d.priceMin : big ? d.priceMax : mid, floor, status]);
+            }
+        }
+        for (const [number, type, price, floor, status] of rooms) {
             await db.query(
                 `INSERT IGNORE INTO rooms (dorm_id, room_number, room_type, price_per_month, floor, status)
-                 VALUES (?, ?, ?, ?, ?, 'available')`,
-                [d.id, number, type, price, Number(number[0])]
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [d.id, number, type, price, floor, status]
             );
         }
+
         console.log(`dorm_${d.id} ${d.name}  ->  เจ้าของ ${d.owner.email} (user id ${owner.id})`);
     }
 
@@ -91,7 +102,7 @@ const main = async () => {
     );
     console.log('แอดมิน -> admin@test.com');
 
-    console.log('\nเสร็จแล้ว: หอ ' + DORMS.length + ' หอ (หอละ 3 ห้อง) / ทุกบัญชีรหัสผ่าน 1234');
+    console.log('\nเสร็จแล้ว: หอ ' + DORMS.length + ' หอ (หอละ 12 ห้อง 3 ชั้น) / ทุกบัญชีรหัสผ่าน 1234');
     await db.end();
 };
 

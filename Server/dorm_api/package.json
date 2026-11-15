@@ -7,7 +7,9 @@
     "start": "node server.js",
     "test": "node --test",
     "test:chat": "node test_chat.js",
-    "test:booking": "node test_booking.js"
+    "test:booking": "node test_booking.js",
+    "test:payment": "node test_payment.js",
+    "setup:booking": "node setup_booking_payment.js"
   },
   "keywords": [],
   "author": "",

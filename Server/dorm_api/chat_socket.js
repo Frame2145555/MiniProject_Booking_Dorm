@@ -57,6 +57,7 @@ const setupChatSocket = (io, con) => {
                         conversation_id: conv.id,
                         sender_id: uid,
                         text: text,
+                        type: 'text',
                         sent_at: now,
                         read_at: null
                     };

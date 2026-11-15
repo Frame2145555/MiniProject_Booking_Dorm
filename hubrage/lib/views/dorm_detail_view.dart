@@ -8,6 +8,7 @@ import '../widgets/dorm_gallery.dart';
 import '../services/chat_service.dart';
 import '../services/session.dart';
 import '../services/tenant_api_service.dart';
+import 'room_plan_view.dart';
 import 'auth_view.dart';
 import 'chat_room_view.dart';
 
@@ -274,44 +275,22 @@ class _DormDetailViewState extends State<DormDetailView> {
   }
 
   /// จองห้อง: ยืนยัน -> POST /api/tenant/bookings -> เจ้าของหอเห็นในหน้าของเขา
-  Future<void> _bookRoom(Map<String, dynamic> room) async {
-    if (!_requireLogin('กรุณาเข้าสู่ระบบก่อนจองห้อง')) return;
-    final roomId = int.tryParse('${room['id']}');
-    if (roomId == null || _bookingRoomId != null) return;
+  /// จองห้อง -> เปิดผังห้อง 2D (เลือกระยะเวลาเช่า + ชำระเงินผ่านแอดมิน) โดยเลือกห้องนี้ไว้ให้
+  Future<void> _bookRoom(Map<String, dynamic> room) => _openRoomPlan(roomId: int.tryParse('${room['id']}'));
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('ยืนยันการจองห้อง'),
-        content: Text(
-          '$_title\nห้อง ${room['roomNumber']} • ${room['roomType']}\n'
-          '${DormCatalog.money(room['price'])} บาท/เดือน\n\n'
-          'เจ้าของหอจะติดต่อกลับเพื่อยืนยันการจอง',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('ยกเลิก'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('ส่งคำขอจอง'),
-          ),
-        ],
+  Future<void> _openRoomPlan({int? roomId}) async {
+    final dormId = _dormDbId;
+    if (dormId == null) {
+      _showMessage('หอนี้ยังไม่มีในระบบ จองไม่ได้');
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RoomPlanView(dormId: dormId, dormName: _title, initialRoomId: roomId),
       ),
     );
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _bookingRoomId = roomId);
-    try {
-      await TenantApiService.createBooking(roomId: roomId);
-      if (mounted) _showMessage('ส่งคำขอจองห้อง ${room['roomNumber']} แล้ว');
-    } on TenantApiException catch (e) {
-      if (mounted) _showMessage(e.message);
-    } finally {
-      if (mounted) setState(() => _bookingRoomId = null);
-    }
-    _loadDetail(); // สถานะห้องอาจเปลี่ยน
+    if (mounted) _loadDetail(); // สถานะห้องอาจเปลี่ยน
   }
 
   static const _roomStatusLabel = {
@@ -631,20 +610,42 @@ class _DormDetailViewState extends State<DormDetailView> {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: SizedBox(
                 height: 58,
-                child: ElevatedButton.icon(
+                child: OutlinedButton(
                   onPressed: _requestVisit,
-                  icon: const Icon(Icons.calendar_month_rounded),
-                  label: const Text('นัดเข้าดูห้องพัก'),
-                  style: ElevatedButton.styleFrom(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20),
                     ),
                     textStyle: const TextStyle(
-                      fontSize: 16,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  child: const Text('นัดดูห้อง'),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // จองห้อง -> ผังห้อง 2D -> เลือกห้อง + ระยะเวลา -> ชำระเงินผ่านแอดมิน
+            Expanded(
+              child: SizedBox(
+                height: 58,
+                child: ElevatedButton.icon(
+                  onPressed: () => _openRoomPlan(),
+                  icon: const Icon(Icons.meeting_room_rounded, size: 20),
+                  label: const Text('จองห้อง'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -797,6 +798,13 @@ class _DormDetailViewState extends State<DormDetailView> {
                   const _SectionHeader(
                     'ห้องพัก',
                     icon: Icons.meeting_room_outlined,
+                  ),
+                  const SizedBox(height: 12),
+                  // ผังห้อง 2D: เลือกห้อง + ระยะเวลาเช่า แล้วชำระเงินผ่านแอดมิน
+                  OutlinedButton.icon(
+                    onPressed: () => _openRoomPlan(),
+                    icon: const Icon(Icons.grid_view_rounded),
+                    label: const Text('ดูผังห้อง และจองห้อง'),
                   ),
                   const SizedBox(height: 12),
                   _roomsSection(),

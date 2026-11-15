@@ -210,7 +210,48 @@ class _ChatRoomViewState extends State<ChatRoomView> {
         ),
       );
 
+  /// ข้อความแจ้งเตือนจากระบบ (เช่น แอดมินอนุมัติการจอง) -> กล่องกลางจอ ไม่ใช่ฟองซ้าย/ขวา
+  Widget _systemNotice(ChatMessage msg) {
+    final text = msg.text.replaceFirst('[แจ้งเตือนจากระบบ] ', '');
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12, left: 12, right: 12),
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        decoration: BoxDecoration(
+          color: AppColors.accentSoft,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.accent.withOpacity(0.25)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.notifications_active_outlined, size: 15, color: AppColors.accentDeep),
+                SizedBox(width: 4),
+                Text(
+                  'แจ้งเตือนจากระบบ',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.accentDeep),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, height: 1.45, color: AppColors.ink),
+            ),
+            const SizedBox(height: 4),
+            Text(msg.timeLabel, style: const TextStyle(fontSize: 10, color: AppColors.muted)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _bubble(ChatMessage msg) {
+    if (msg.isSystem) return _systemNotice(msg);
     final me = _controller.isMine(msg);
     final read = me && msg.isRead;
     return Align(

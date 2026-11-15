@@ -18,6 +18,9 @@ const pool = mysql.createPool({ ...require("./db-config.json"), charset: "utf8mb
 const db = pool.promise();
 
 const app = express();
+// สร้าง http server + Socket.IO ไว้ก่อน เพื่อให้ระบบจอง (booking_payment_routes) ส่งแจ้งเตือนเข้าแชทได้
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, { cors: { origin: "*" } });
 app.use(cors());
 app.use(express.json({ limit: "100kb" }));
 
@@ -41,8 +44,10 @@ const optionalUser = (req, res, next) => {
 };
 app.use("/api/tenant", optionalUser, require("./Troutes/tenantRoutes")); // ระบบค้นหา/จอง (ของพี่): /api/tenant/...
 app.use("/api/admin", require("./admin_routes")(db, auth));    // ระบบแอดมิน: อนุมัติหอ / ระงับบัญชี
+// ระบบจองห้องแบบจ่ายเงินผ่านแอดมิน + ผัง 2D + แจ้งเตือนในแชท (ไฟล์แยก)
+const bookingPayment = require("./booking_payment_routes");
+app.use("/api/booking", bookingPayment(db, auth, io, appCfg.jwt_secret));
 // ไม่ได้ mount Troutes/authRoutes (/api/login ของพี่) เพราะซ้ำกับ loginandregister.js ด้านบน
-app.use("/api/admin/kyc", require("./admin_kyc_routes")(db, auth));
 
 app.get("/", (req, res) => res.json({ message: "Dorm Master server is running" }));
 
@@ -63,12 +68,14 @@ app.use((err, req, res, next) => {
 });
 
 //=================== Socket.IO (แชท real time) =======================
-const httpServer = http.createServer(app);
-const io = new Server(httpServer, { cors: { origin: "*" } });
 require("./chat_socket").setupChatSocket(io, pool);
 
 const PORT = appCfg.port || 3000;
-httpServer.listen(PORT, () => {
+// สร้างตารางของระบบจอง (ถ้ายังไม่มี) ก่อนเปิดรับ request -> ไม่ต้อง import SQL เอง
+bookingPayment.ensureSchema(pool)
+  .catch((err) => console.error("สร้างตารางระบบจองไม่สำเร็จ (ลอง node setup_booking_payment.js):", err.message))
+  .finally(() => httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log("แชท real time (Socket.IO) พร้อมใช้งาน"); // ไม่เห็นบรรทัดนี้ = รัน server.js ตัวเก่าอยู่
-});
+  console.log("ระบบจองห้อง + ชำระเงิน พร้อมใช้งาน");
+}));

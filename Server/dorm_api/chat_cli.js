@@ -1,7 +1,8 @@
 // แชทผ่าน terminal ใช้แทนเครื่องที่ 2 ตอนทดสอบ (ไม่ต้องเปิด emulator 2 ตัว)
 // วิธีรัน: node chat_cli.js seller@test.com
 //         node chat_cli.js seller@test.com https://xxxx.ngrok-free.app
-// พิมพ์ข้อความแล้วกด Enter = ส่งเข้าห้องแชทล่าสุด
+// พิมพ์ข้อความแล้วกด Enter = ส่งเข้าห้องที่เลือกอยู่ (เริ่มต้น = ห้องที่มีความเคลื่อนไหวล่าสุด)
+// คำสั่งพิเศษ:  /rooms = ดูรายการห้อง   /room 3 = เลือกห้อง 3 (ล็อกไว้ ไม่เด้งตามข้อความใหม่)   /auto = กลับไปโหมดเด้งตามห้องล่าสุด
 const { io } = require('socket.io-client');
 const readline = require('readline');
 
@@ -11,7 +12,8 @@ const headers = {'Content-Type': 'application/json', 'ngrok-skip-browser-warning
 
 let me = null;
 let socket = null;
-let currentConv = null;   // ห้องที่จะส่งข้อความไป (ห้องที่มีข้อความเข้ามาล่าสุด)
+let currentConv = null;   // ห้องที่จะส่งข้อความไป
+let locked = false;       // true = ผู้ใช้เลือกห้องเองด้วย /room -> ไม่เปลี่ยนห้องอัตโนมัติ
 
 const getConversations = async () => {
     const res = await fetch(BASE + '/api/conversations', {
@@ -47,12 +49,12 @@ const main = async () => {
     // มีห้องใหม่หรือข้อความใหม่ -> join ให้ครบทุกห้อง
     socket.on('conversation_updated', async (data) => {
         await joinAll();
-        currentConv = data.conversation_id;
+        if(!locked) currentConv = data.conversation_id;
     });
 
     socket.on('new_message', (msg) => {
         if(msg.sender_id == me.id) return;
-        currentConv = msg.conversation_id;
+        if(!locked) currentConv = msg.conversation_id;
         console.log('\n[ห้อง ' + msg.conversation_id + '] อีกฝั่ง: ' + msg.text);
         socket.emit('mark_read', msg.conversation_id);   // ให้แอปขึ้น "อ่านแล้ว"
         rl.prompt();
@@ -63,6 +65,45 @@ const main = async () => {
     rl.on('line', (line) => {
         const text = line.trim();
         if(!text) return rl.prompt();
+
+        // ---------- คำสั่งเลือกห้อง ----------
+        if(text == '/rooms'){
+            getConversations().then((list) => {
+                if(!list.length) console.log('ยังไม่มีห้องแชท');
+                list.forEach((c) => console.log(
+                    (c.id == currentConv ? ' * ' : '   ') + 'ห้อง ' + c.id + ' | ' + c.dorm_name + ' | คุยกับ ' + c.other_name +
+                    (c.unread ? ' | ยังไม่อ่าน ' + c.unread : '')));
+                console.log(locked ? '(ล็อกห้องไว้ พิมพ์ /auto เพื่อปลดล็อก)' : '(โหมดอัตโนมัติ: เด้งไปห้องที่มีข้อความล่าสุด)');
+                rl.prompt();
+            });
+            return;
+        }
+        const pick = /^\/room\s+(\d+)$/.exec(text);
+        if(pick){
+            getConversations().then((list) => {
+                const room = list.find((c) => c.id == Number(pick[1]));
+                if(!room){
+                    console.log('ไม่มีห้อง ' + pick[1] + ' ของคุณ (พิมพ์ /rooms ดูรายการ)');
+                } else {
+                    currentConv = room.id;
+                    locked = true;
+                    socket.emit('mark_read', room.id);
+                    console.log('เลือกห้อง ' + room.id + ' (' + room.dorm_name + ' / ' + room.other_name + ') แล้ว');
+                }
+                rl.prompt();
+            });
+            return;
+        }
+        if(text == '/auto'){
+            locked = false;
+            console.log('โหมดอัตโนมัติ: ส่งเข้าห้องที่มีข้อความล่าสุด');
+            return rl.prompt();
+        }
+        if(text.startsWith('/')){
+            console.log('คำสั่งที่มี: /rooms, /room <เลข>, /auto');
+            return rl.prompt();
+        }
+
         if(!currentConv){
             console.log('ยังไม่มีห้องแชท ให้แอปกด "เริ่มแชทกับเจ้าของหอ" ก่อน');
             return rl.prompt();

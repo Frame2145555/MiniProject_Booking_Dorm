@@ -29,10 +29,10 @@ static const _url = 'https://xxxx.ngrok-free.app';   // รันบน Chrome �
 ## ทดสอบ
 ```powershell
 npm test                                         # unit test 21 ข้อ (ไม่ต้องเปิด server)
-node test_chat.js                                # integration 22 ข้อ (ต้องเปิด server)
+node test_chat.js                                # integration 30 ข้อ (ต้องเปิด server)
 node test_chat.js https://xxxx.ngrok-free.app    # ทดสอบผ่าน ngrok
 node test_booking.js                             # ระบบหอ/จอง/แอดมิน 25 ข้อ (ต้องเปิด server + รัน seed_dorms.js แล้ว)
-node chat_cli.js seller@test.com                 # แชทผ่าน terminal แทนเครื่องที่ 2
+node chat_cli.js seller@test.com                 # แชทผ่าน terminal แทนเครื่องที่ 2 (/rooms ดูห้อง, /room 3 เลือกห้อง, /auto)
 ```
 
 ## บัญชีทดสอบ (รหัสผ่าน 1234)
@@ -83,6 +83,27 @@ node chat_cli.js seller@test.com                 # แชทผ่าน termina
 3. ผู้เช่า (tenant@test.com) เห็นหอในหน้าแรก/ค้นหา → กดหัวใจ (บันทึกลง DB) → เข้าหน้ารายละเอียด → **จองห้อง** / นัดดูห้อง / แชท
 4. เจ้าของหอเห็นคำขอจองและคำขอนัด → กดยืนยัน (ห้องเปลี่ยนเป็น "มีผู้เช่า") หรือปฏิเสธ
 5. ผู้เช่าดูสถานะได้ที่เมนู ☰ → **การจองและนัดดูห้องของฉัน**
+
+## ระบบจองห้องแบบชำระเงินผ่านแอดมิน (booking_payment_routes.js)
+ตาราง: `dorm_rent_plans`, `booking_payments` + คอลัมน์ `messages.message_type` (ไฟล์ `sql/booking_payment.sql`)
+**server สร้างให้เองตอนเปิด** (หรือรัน `node setup_booking_payment.js` / import ไฟล์ SQL ใน phpMyAdmin) แล้วรัน `node seed_dorms.js` เพื่อใส่ห้อง 3 ชั้น
+
+**ยอดเงิน = ค่าเช่าต่อเดือนของห้อง (ที่เจ้าของหอตั้งตอนเพิ่มห้อง) x ระยะเวลา**: 1 อาทิตย์ = ÷4, 1 เดือน = x1, 1 เทอม = x4, 1 ปี = x12
+เจ้าของหอเลือกได้ว่าหอนี้เปิดให้เช่าแบบไหน (ยังไม่ตั้ง = เปิดทุกแบบ)
+
+1. ผู้เช่าเปิดผังห้อง 2D (เขียว ว่าง / เทา มีผู้เช่า / ฟ้า ติดจอง / แดง ปรับปรุง) → เลือกห้อง + ระยะเวลา (1 อาทิตย์ / 1 เดือน / 1 เทอม / 1 ปี ที่หอเปิดให้เช่า) → **จอง** = รอชำระเงิน (ห้องติดจอง 30 นาที)
+2. หน้าชำระเงิน: QR จำลอง + ยอดที่ระบบล็อกตามราคาเจ้าของหอ → กด **จ่ายเงิน** = รอแอดมินตรวจสอบ
+3. แอดมิน (☰ → ตรวจสอบการชำระเงินค่าจอง) ดูยอดที่ต้องจ่าย vs ยอดที่ได้รับ → **อนุมัติ** → ระบบส่งข้อความแจ้งเตือนเข้าแชทของเจ้าของหอ
+4. เจ้าของหอ (☰ → คำขอจอง) → **ยืนยันการจอง** → ห้องเป็น "มีผู้เช่า" + แจ้งเตือนผู้เช่าในแชท (หรือปฏิเสธ → แอดมินคืนเงิน)
+
+ทดสอบ: `node test_payment.js` (45 ข้อ)
+
+| ใคร | API |
+|---|---|
+| ทุกคน | `GET /api/booking/dorms/:dormId/plan` |
+| ผู้เช่า | `POST /api/booking/reservations` · `GET /api/booking/reservations/mine` · `GET /api/booking/reservations/:id` · `POST /api/booking/reservations/:id/pay` · `POST /api/booking/reservations/:id/cancel` |
+| แอดมิน | `GET /api/booking/admin/payments?status=paid` · `PATCH /api/booking/admin/payments/:id` `{approve, note}` |
+| เจ้าของหอ | `GET /api/booking/owner/reservations?status=approved` · `PATCH /api/booking/owner/reservations/:id` `{action: confirm/reject}` · `GET/PUT /api/booking/owner/dorms/:dormId/plans` |
 
 ## ยังไม่มี
 - **รีวิว** และ **KYC** ในหน้าแอดมินยังเป็นข้อมูลตัวอย่าง (ฐานข้อมูลยังไม่มีตารางรีวิว / ยังไม่มี API อัปโหลดเอกสาร KYC)

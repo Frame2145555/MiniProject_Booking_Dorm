@@ -3,7 +3,8 @@
 // Model ไม่ได้ไปดึงข้อมูลเอง -> ChatService เป็นคนดึง แล้วส่ง JSON มาให้ model แปลง
 //
 // JSON ที่ server ส่งมา (ดู chat_routes.js / chat_socket.js):
-//   ข้อความ  { id, conversation_id, sender_id, text, sent_at, read_at }
+//   ข้อความ  { id, conversation_id, sender_id, text, type, sent_at, read_at }
+//            type: 'text' = คนพิมพ์ / 'system' = แจ้งเตือนจากระบบ (เช่น แอดมินอนุมัติการจอง)
 //   ห้องแชท  { id, dorm_id, dorm_name, other_name, last_message, last_sent_at, unread, updated_at }
 
 /// แปลงค่าจาก JSON เป็น int (server อาจส่งมาเป็น int / double / String)
@@ -37,6 +38,9 @@ class ChatMessage {
   final String text;
   final DateTime? sentAt;
 
+  /// 'text' = ข้อความที่คนพิมพ์ / 'system' = แจ้งเตือนจากระบบ (แสดงเป็นกล่องกลางจอ)
+  final String type;
+
   /// เวลาที่อีกฝั่งอ่าน (null = ยังไม่อ่าน) เปลี่ยนได้เมื่อ server ส่ง 'messages_read' มา
   DateTime? readAt;
 
@@ -47,6 +51,7 @@ class ChatMessage {
     required this.text,
     this.sentAt,
     this.readAt,
+    this.type = 'text',
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
@@ -57,6 +62,7 @@ class ChatMessage {
         text: (json['text'] ?? json['message_text'] ?? '').toString(),
         sentAt: _toTime(json['sent_at']),
         readAt: _toTime(json['read_at']),
+        type: json['type']?.toString() == 'system' ? 'system' : 'text',
       );
 
   /// สำหรับ event จาก socket (ข้อมูลเป็น dynamic) -> null ถ้าหน้าตาไม่ใช่ข้อความ
@@ -66,6 +72,9 @@ class ChatMessage {
   }
 
   bool get isRead => readAt != null;
+
+  /// ข้อความแจ้งเตือนจากระบบ (การจอง / การชำระเงิน)
+  bool get isSystem => type == 'system';
 
   /// ข้อความนี้ส่งโดย user คนนี้ไหม
   bool isSentBy(int userId) => senderId == userId;
@@ -78,6 +87,7 @@ class ChatMessage {
         'conversation_id': conversationId,
         'sender_id': senderId,
         'text': text,
+        'type': type,
         'sent_at': sentAt?.toUtc().toIso8601String(),
         'read_at': readAt?.toUtc().toIso8601String(),
       };
@@ -120,7 +130,9 @@ class ChatConversation {
   bool get hasUnread => unread > 0;
 
   /// ข้อความที่โชว์ในรายการ (ยังไม่เคยคุย -> 'ยังไม่มีข้อความ')
-  String get preview => lastMessage ?? 'ยังไม่มีข้อความ';
+  String get preview =>
+      lastMessage?.replaceFirst('[แจ้งเตือนจากระบบ] ', 'แจ้งเตือน: ').replaceAll('\n', ' ') ??
+      'ยังไม่มีข้อความ';
 
   String get timeLabel => formatChatTime(lastSentAt);
 }

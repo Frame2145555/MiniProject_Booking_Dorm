@@ -27,6 +27,7 @@ module.exports = (db, auth) => {
          JOIN dorms d ON d.id = r.dorm_id
          JOIN users u ON u.id = b.tenant_id
         WHERE d.owner_id = ?
+          AND NOT EXISTS (SELECT 1 FROM booking_payments p WHERE p.booking_id = b.id) -- จองแบบจ่ายเงิน แสดงอีกหน้า
         ORDER BY b.created_at DESC, b.id DESC`,
       [req.user.id]
     );
@@ -49,6 +50,12 @@ module.exports = (db, auth) => {
       if (!booking) {
         await conn.rollback();
         return fail(res, 404, "ไม่พบคำขอจองนี้");
+      }
+      // การจองที่ผ่านระบบชำระเงิน (booking_payment_routes.js) ต้องจัดการที่ /api/booking/owner/reservations
+      const [paid] = await conn.query("SELECT id FROM booking_payments WHERE booking_id = ?", [booking.id]);
+      if (paid.length) {
+        await conn.rollback();
+        return fail(res, 400, "การจองนี้ชำระเงินผ่านระบบ ให้ยืนยันที่หน้าคำขอจอง (ชำระเงินแล้ว)");
       }
       if (status === "confirmed") {
         if (booking.status !== "pending") {

@@ -74,7 +74,7 @@ module.exports = function createChatRoutes(con, verifyToken) {
             if(!conv) return res.status(403).send('Not your conversation');
             const sql = `
                 SELECT * FROM (
-                    SELECT id, conversation_id, sender_id, message_text AS text, sent_at, read_at
+                    SELECT id, conversation_id, sender_id, message_text AS text, message_type AS type, sent_at, read_at
                     FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 50
                 ) AS last50 ORDER BY id ASC`;
             con.query(sql, [conv.id], (err, results) => {
