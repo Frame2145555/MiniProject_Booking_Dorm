@@ -62,8 +62,8 @@ const clients = [];
 before(async () => {
     httpServer = http.createServer();
     setupChatSocket(new Server(httpServer), fakeDb);
-    await new Promise((resolve) => httpServer.listen(0, resolve));   // port 0 = ให้ระบบเลือก port ว่างเอง
-    url = 'http://localhost:' + httpServer.address().port;
+    await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));   // port 0 = ให้ระบบเลือก port ว่างเอง
+    url = 'http://127.0.0.1:' + httpServer.address().port;
 });
 
 after(() => {

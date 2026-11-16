@@ -5,11 +5,14 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test",
-    "test:chat": "node test_chat.js",
-    "test:booking": "node test_booking.js",
-    "test:payment": "node test_payment.js",
-    "setup:booking": "node setup_booking_payment.js"
+    "test": "node --test test/*.test.js",
+    "test:chat": "node test/integration/chat_smoke.js",
+    "test:booking": "node test/integration/booking_smoke.js",
+    "test:payment": "node test/integration/payment_smoke.js",
+    "setup:booking": "node scripts/setup_booking_payment.js",
+    "seed:dorms": "node scripts/seed_dorms.js",
+    "seed:passwords": "node scripts/seed_passwords.js",
+    "chat:cli": "node tools/chat_cli.js"
   },
   "keywords": [],
   "author": "",

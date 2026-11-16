@@ -10,7 +10,7 @@ const jsonServer = require("json-server");
 const { Server } = require("socket.io");
 
 const appCfg = require("./app.json");
-// ระบบหอ/จองของพี่ (Tmiddleware/auth.js, Tcontrollers/authController.js) อ่าน key จาก process.env.JWT_SECRET
+// ระบบหอ/จองของพี่ (middleware/auth.js, controllers/authController.js) อ่าน key จาก process.env.JWT_SECRET
 // ตั้งให้เป็นค่าเดียวกับ app.json -> token จาก /api/login ใช้ได้ทั้งแชท ระบบหอ และระบบจอง
 if (!process.env.JWT_SECRET) process.env.JWT_SECRET = appCfg.jwt_secret;
 // pool เดียว ใช้ได้ 2 แบบ: promise (login/search) และ callback (แชท)
@@ -18,7 +18,7 @@ const pool = mysql.createPool({ ...require("./db-config.json"), charset: "utf8mb
 const db = pool.promise();
 
 const app = express();
-// สร้าง http server + Socket.IO ไว้ก่อน เพื่อให้ระบบจอง (booking_payment_routes) ส่งแจ้งเตือนเข้าแชทได้
+// สร้าง http server + Socket.IO ไว้ก่อน เพื่อให้ระบบจอง (routes/bookingPaymentRoutes) ส่งแจ้งเตือนเข้าแชทได้
 const httpServer = http.createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
 app.use(cors());
@@ -27,9 +27,9 @@ app.use(express.json({ limit: "100kb" }));
 const auth = require("./loginandregister")(db, { jwtSecret: appCfg.jwt_secret });
 app.use("/api", auth.router);                                  // POST /api/register, /api/login · GET /api/me
 app.use("/api", require("./searchandsort")(db));               // GET /api/dorms, /api/dorms/:id, /api/amenities
-app.use("/api", require("./chat_routes")(pool, auth.verifyToken)); // /api/conversations ... (แชท)
-app.use("/api/owner", require("./owner_booking_routes")(db, auth)); // จอง/นัด ฝั่งเจ้าของหอ (ส่วนเสริม ต้องมาก่อนของพี่)
-app.use("/api/owner", require("./Troutes/ownerRoutes"));       // ระบบเจ้าของหอ (ของพี่): /api/owner/...
+app.use("/api", require("./routes/chatRoutes")(pool, auth.verifyToken)); // /api/conversations ... (แชท)
+app.use("/api/owner", require("./routes/ownerBookingRoutes")(db, auth)); // จอง/นัด ฝั่งเจ้าของหอ (ส่วนเสริม ต้องมาก่อนของพี่)
+app.use("/api/owner", require("./routes/ownerRoutes"));       // ระบบเจ้าของหอ (ของพี่): /api/owner/...
 // หน้า list/รายละเอียดหอเปิดดูได้โดยไม่ login แต่ถ้าแนบ token มา ให้รู้ว่าใครดู (isFavorite / ยอดวิว)
 const jwt = require("jsonwebtoken");
 const optionalUser = (req, res, next) => {
@@ -42,12 +42,11 @@ const optionalUser = (req, res, next) => {
   }
   next();
 };
-app.use("/api/tenant", optionalUser, require("./Troutes/tenantRoutes")); // ระบบค้นหา/จอง (ของพี่): /api/tenant/...
-app.use("/api/admin", require("./admin_routes")(db, auth));    // ระบบแอดมิน: อนุมัติหอ / ระงับบัญชี
+app.use("/api/tenant", optionalUser, require("./routes/tenantRoutes")); // ระบบค้นหา/จอง (ของพี่): /api/tenant/...
+app.use("/api/admin", require("./routes/adminRoutes")(db, auth));    // ระบบแอดมิน: อนุมัติหอ / ระงับบัญชี
 // ระบบจองห้องแบบจ่ายเงินผ่านแอดมิน + ผัง 2D + แจ้งเตือนในแชท (ไฟล์แยก)
-const bookingPayment = require("./booking_payment_routes");
+const bookingPayment = require("./routes/bookingPaymentRoutes");
 app.use("/api/booking", bookingPayment(db, auth, io, appCfg.jwt_secret));
-// ไม่ได้ mount Troutes/authRoutes (/api/login ของพี่) เพราะซ้ำกับ loginandregister.js ด้านบน
 
 app.get("/", (req, res) => res.json({ message: "Dorm Master server is running" }));
 
@@ -73,7 +72,7 @@ require("./chat_socket").setupChatSocket(io, pool);
 const PORT = appCfg.port || 3000;
 // สร้างตารางของระบบจอง (ถ้ายังไม่มี) ก่อนเปิดรับ request -> ไม่ต้อง import SQL เอง
 bookingPayment.ensureSchema(pool)
-  .catch((err) => console.error("สร้างตารางระบบจองไม่สำเร็จ (ลอง node setup_booking_payment.js):", err.message))
+  .catch((err) => console.error("สร้างตารางระบบจองไม่สำเร็จ (ลอง npm run setup:booking):", err.message))
   .finally(() => httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log("แชท real time (Socket.IO) พร้อมใช้งาน"); // ไม่เห็นบรรทัดนี้ = รัน server.js ตัวเก่าอยู่
