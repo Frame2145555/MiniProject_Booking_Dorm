@@ -72,6 +72,37 @@ class TenantApiService {
     );
   }
 
+  /// ส่งรายงานหอพักจากผู้เช่าไปยัง Admin (บันทึกใน MySQL)
+  static Future<List<Map<String, dynamic>>> getDormReviews(int dormId) async {
+    final res = await _send('GET', '/api/reviews/dorm/$dormId');
+    return _list(res['data']);
+  }
+
+  static Future<void> createDormReview({
+    required int dormId, required int rating, required String comment,
+  }) async {
+    await _send('POST', '/api/tenant/reviews', body: {
+      'dormId': dormId, 'rating': rating, 'comment': comment,
+    }, needLogin: true);
+  }
+
+  static Future<void> createDormReport({
+    required int dormId,
+    required String reason,
+    String description = '',
+  }) async {
+    await _send(
+      'POST',
+      '/api/tenant/reports',
+      body: {
+        'dormId': dormId,
+        'reason': reason,
+        'description': description,
+      },
+      needLogin: true,
+    );
+  }
+
   static Future<void> createBooking({
     required int roomId,
     DateTime? startsAt,
