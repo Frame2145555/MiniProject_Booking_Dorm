@@ -26,6 +26,10 @@ class AdminApiService {
   static Future<List<Map<String, dynamic>>> getSellers() async =>
       _list((await _send('GET', '/api/admin/sellers'))['data']);
 
+  /// รายชื่อผู้ใช้ทุกประเภท (ไม่รวมบัญชีแอดมิน)
+  static Future<List<Map<String, dynamic>>> getUsers() async =>
+      _list((await _send('GET', '/api/admin/users'))['data']);
+
   /// status: pending | approved | rejected | all
   static Future<List<Map<String, dynamic>>> getDorms({String status = 'all'}) async =>
       _list((await _send('GET', '/api/admin/dorms?status=$status'))['data']);
