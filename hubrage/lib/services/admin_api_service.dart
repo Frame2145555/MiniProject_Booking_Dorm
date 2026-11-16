@@ -23,12 +23,40 @@ class AdminApiService {
 
   static bool get isAdmin => Session.isLoggedIn && Session.role == 'admin';
 
+  static Future<Map<String, dynamic>> getOverview() async =>
+      Map<String, dynamic>.from((await _send('GET', '/api/admin/overview'))['data'] as Map);
+
   static Future<List<Map<String, dynamic>>> getSellers() async =>
       _list((await _send('GET', '/api/admin/sellers'))['data']);
+
+  static Future<List<Map<String, dynamic>>> getReviews({String status = 'all'}) async =>
+      _list((await _send('GET', '/api/admin/reviews?status=$status'))['data']);
+
+  static Future<void> setReviewStatus(int reviewId, String status, {String? adminNote}) =>
+      _send('PATCH', '/api/admin/reviews/$reviewId/status', body: {
+        'status': status, if (adminNote != null) 'adminNote': adminNote,
+      });
+
+  static Future<void> deleteReview(int reviewId) =>
+      _send('DELETE', '/api/admin/reviews/$reviewId');
 
   /// รายชื่อผู้ใช้ทุกประเภท (ไม่รวมบัญชีแอดมิน)
   static Future<List<Map<String, dynamic>>> getUsers() async =>
       _list((await _send('GET', '/api/admin/users'))['data']);
+
+  /// รายงานหอพักจากผู้ใช้งาน (status: all | pending | reviewed | dismissed)
+  static Future<List<Map<String, dynamic>>> getReports({String status = 'all'}) async =>
+      _list((await _send('GET', '/api/admin/reports?status=$status'))['data']);
+
+  static Future<void> setReportStatus(
+    int reportId,
+    String status, {
+    String? adminNote,
+  }) =>
+      _send('PATCH', '/api/admin/reports/$reportId/status', body: {
+        'status': status,
+        if (adminNote != null) 'adminNote': adminNote,
+      });
 
   /// status: pending | approved | rejected | all
   static Future<List<Map<String, dynamic>>> getDorms({String status = 'all'}) async =>
@@ -67,9 +95,13 @@ class AdminApiService {
     final c = client ?? http.Client();
     http.Response response;
     try {
-      final request = method == 'GET'
-          ? c.get(uri, headers: headers)
-          : c.patch(uri, headers: headers, body: jsonEncode(body ?? const {}));
+      final encoded = body == null ? null : jsonEncode(body);
+      final request = switch (method) {
+        'GET' => c.get(uri, headers: headers),
+        'PATCH' => c.patch(uri, headers: headers, body: encoded),
+        'DELETE' => c.delete(uri, headers: headers),
+        _ => throw ArgumentError.value(method, 'method'),
+      };
       response = await request.timeout(const Duration(seconds: 15));
     } catch (_) {
       throw AdminApiException(
