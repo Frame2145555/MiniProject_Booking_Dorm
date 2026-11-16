@@ -23,10 +23,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
-<<<<<<< Updated upstream
-//ไม่อร่อย
-=======
->>>>>>> Stashed changes
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Dorm Master Backend API running on port ${PORT}`);
