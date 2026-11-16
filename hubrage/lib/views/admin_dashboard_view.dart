@@ -4,6 +4,8 @@ import '../models/admin_console_state.dart';
 import '../models/kyc_request_model.dart';
 import '../theme/app_theme.dart';
 import 'admin_kyc_detail_view.dart';
+import 'admin_users_view.dart';
+import 'admin_payments_view.dart';
 
 class AdminDashboardView extends StatefulWidget {
   final AdminConsoleState consoleState;
@@ -346,13 +348,15 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
               const SizedBox(height: 20),
               _buildSectionTabs(),
               const SizedBox(height: 18),
-              ..._selectedSection == 0
-                  ? _sellerList()
-                  : _selectedSection == 1
-                  ? _dormRequestList()
-                  : _selectedSection == 2
-                  ? _kycRequestList()
-                  : _reviewList(),
+              ...switch (_selectedSection) {
+                0 => _sellerList(),
+                1 => [const AdminUsersView()],
+                2 => [_paymentSection()],
+                3 => _reportList(),
+                4 => _dormRequestList(),
+                5 => _kycRequestList(),
+                _ => _reviewList(),
+              },
             ],
           );
         },
@@ -497,30 +501,63 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
         borderRadius: BorderRadius.circular(22),
         boxShadow: AppShadows.soft,
       ),
-      child: Row(
-        children: [
-          _sectionChip('ผู้ขาย', 0, Icons.people_alt_outlined),
-          _sectionChip(
-            'คำขอลงหอ',
-            1,
-            Icons.fact_check_outlined,
-            badge: widget.consoleState.pendingDormCount,
-          ),
-          _sectionChip(
-            'ตรวจ KYC',
-            2,
-            Icons.verified_user_outlined,
-            badge: _pendingKycCount,
-          ),
-          _sectionChip(
-            'รีวิว',
-            3,
-            Icons.rate_review_outlined,
-            badge: widget.consoleState.hiddenReviewCount,
-          ),
-        ],
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          _sectionChip('เจ้าของหอ', 0, Icons.store_outlined),
+          _sectionChip('ผู้ใช้งาน', 1, Icons.people_alt_outlined),
+          _sectionChip('Payment', 2, Icons.payments_outlined),
+          _sectionChip('Report', 3, Icons.flag_outlined),
+          _sectionChip('คำขอลงหอ', 4, Icons.fact_check_outlined,
+              badge: widget.consoleState.pendingDormCount),
+          _sectionChip('ตรวจ KYC', 5, Icons.verified_user_outlined,
+              badge: _pendingKycCount),
+          _sectionChip('รีวิว', 6, Icons.rate_review_outlined,
+              badge: widget.consoleState.hiddenReviewCount),
+        ]),
       ),
     );
+  }
+
+  Widget _paymentSection() => AppCard(
+    padding: const EdgeInsets.all(20),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Icon(Icons.payments_outlined, size: 34, color: AppColors.accent),
+      const SizedBox(height: 10),
+      const Text('ตรวจสอบการชำระเงิน', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+      const SizedBox(height: 6),
+      const Text('ตรวจสอบหลักฐานและยอดชำระของผู้เช่า พร้อมอนุมัติหรือปฏิเสธรายการ', style: TextStyle(color: AppColors.muted)),
+      const SizedBox(height: 14),
+      SizedBox(width: double.infinity, child: ElevatedButton.icon(
+        onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const AdminPaymentsView(),
+        )),
+        icon: const Icon(Icons.open_in_new), label: const Text('เปิดหน้าตรวจสอบ Payment'),
+      )),
+    ]),
+  );
+
+  List<Widget> _reportList() {
+    final reported = widget.consoleState.sellers
+        .where((seller) => (int.tryParse('${seller['reports']}') ?? 0) > 0)
+        .toList();
+    return [
+      _sectionTitle('รายงานจากผู้ใช้งาน (${reported.length})'),
+      if (reported.isEmpty)
+        _emptyState(Icons.flag_outlined, 'ยังไม่มีรายงานจากผู้ใช้งาน'),
+      ...reported.map((seller) => AppCard(
+        margin: const EdgeInsets.only(bottom: 10),
+        child: ListTile(
+          leading: const CircleAvatar(backgroundColor: AppColors.warningSoft,
+            child: Icon(Icons.flag_outlined, color: AppColors.warning)),
+          title: Text('${seller['dorm']}', style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text('เจ้าของหอ: ${seller['name']}'),
+          trailing: StatusPill('${seller['reports']} รายงาน',
+            color: AppColors.warning, background: AppColors.warningSoft),
+          onTap: () => _showSellerDetails(seller),
+        ),
+      )),
+    ];
   }
 
   Widget _sectionTitle(String text) => Padding(
@@ -1021,7 +1058,8 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
 
   Widget _sectionChip(String label, int index, IconData icon, {int badge = 0}) {
     final selected = _selectedSection == index;
-    return Expanded(
+    return SizedBox(
+      width: 94,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => setState(() => _selectedSection = index),
