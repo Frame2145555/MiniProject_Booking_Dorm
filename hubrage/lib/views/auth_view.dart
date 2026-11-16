@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import '../services/auth_service.dart';
 import '../services/session.dart';
@@ -9,8 +10,15 @@ class AuthView extends StatefulWidget {
   /// true = แสดงเป็นแท็บใน NavigationShell (ไม่มี AppBar ของตัวเอง ใช้แถบบนร่วมกัน)
   /// false = เปิดจากปุ่มบัญชีขวาบน (มี AppBar + ปุ่มย้อนกลับ)
   final bool embedded;
+  final http.Client? authClient;
+  final bool connectSocket;
 
-  const AuthView({super.key, this.embedded = false});
+  const AuthView({
+    super.key,
+    this.embedded = false,
+    this.authClient,
+    this.connectSocket = true,
+  });
 
   @override
   State<AuthView> createState() => _AuthViewState();
@@ -54,7 +62,12 @@ class _AuthViewState extends State<AuthView> {
       return;
     }
     setState(() => _loading = true);
-    final error = await AuthService.login(email, password);
+    final error = await AuthService.login(
+      email,
+      password,
+      client: widget.authClient,
+      connectSocket: widget.connectSocket,
+    );
     if (!mounted) return;
     setState(() => _loading = false);
     if (error != null) {
@@ -246,6 +259,7 @@ class _AuthViewState extends State<AuthView> {
       fullName: fullName,
       phone: _phoneController.text,
       role: _regRole,
+      client: widget.authClient,
     );
     if (!mounted) return;
     setState(() => _registering = false);
