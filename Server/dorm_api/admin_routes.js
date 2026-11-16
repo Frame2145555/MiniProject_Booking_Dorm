@@ -37,7 +37,11 @@ module.exports = (db, auth) => {
         (SELECT COUNT(*) FROM dorms WHERE approval_status = 'pending')        AS pending_dorms,
         (SELECT COUNT(*) FROM dorms WHERE approval_status = 'approved')       AS approved_dorms,
         (SELECT COUNT(*) FROM dorm_view_events)                               AS total_views,
-        (SELECT COUNT(*) FROM bookings)                                       AS bookings`);
+        (SELECT COUNT(*) FROM bookings)                                       AS bookings,
+        (SELECT COUNT(*) FROM booking_payments WHERE status = 'paid')       AS pending_payments,
+        (SELECT COUNT(*) FROM dorm_reports WHERE status = 'pending')         AS pending_reports,
+        (SELECT COUNT(*) FROM dorm_reviews WHERE status = 'visible')         AS visible_reviews,
+        (SELECT COUNT(*) FROM dorm_reviews)                                  AS total_reviews`);
     res.json({ success: true, data: row });
   });
 
