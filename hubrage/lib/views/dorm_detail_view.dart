@@ -47,6 +47,7 @@ class _DormDetailViewState extends State<DormDetailView> {
   void initState() {
     super.initState();
     _loadDetail();
+    _loadReviews();
   }
 
   Future<void> _loadDetail() async {
@@ -148,6 +149,144 @@ class _DormDetailViewState extends State<DormDetailView> {
   }
 
   bool _openingChat = false;
+  bool _sendingReport = false;
+  bool _sendingReview = false;
+  List<Map<String, dynamic>> _serverReviews = [];
+  bool _reviewsLoadedFromServer = false;
+
+  Future<void> _loadReviews() async {
+    final id = _dormDbId;
+    if (id == null) return;
+    try {
+      final rows = await TenantApiService.getDormReviews(id);
+      if (!mounted) return;
+      setState(() { _serverReviews = rows; _reviewsLoadedFromServer = true; });
+    } catch (_) { /* ถ้า API ยังไม่พร้อม ใช้ state เดิมเป็น fallback */ }
+  }
+
+  Future<void> _writeReview() async {
+    if (!_requireLogin('กรุณาเข้าสู่ระบบก่อนเขียนรีวิว')) return;
+    if (Session.role != 'tenant') { _showMessage('เฉพาะบัญชีผู้เช่าเท่านั้นที่เขียนรีวิวได้'); return; }
+    final dormId = _dormDbId;
+    if (dormId == null || _sendingReview) return;
+    int rating = 5;
+    final controller = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, setDialogState) => AlertDialog(
+        title: const Text('เขียนรีวิวหอพัก'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('ให้คะแนน'),
+          const SizedBox(height: 8),
+          Wrap(spacing: 2, children: List.generate(5, (i) => IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: () => setDialogState(() => rating = i + 1),
+            icon: Icon(i < rating ? Icons.star_rounded : Icons.star_border_rounded, color: AppColors.star),
+          ))),
+          TextField(controller: controller, maxLines: 4, maxLength: 1500, decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'ความคิดเห็น')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('ยกเลิก')),
+          ElevatedButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('ส่งรีวิว')),
+        ],
+      )),
+    );
+    final comment = controller.text.trim();
+    controller.dispose();
+    if (result != true || !mounted) return;
+    if (comment.isEmpty) { _showMessage('กรุณาเขียนความคิดเห็น'); return; }
+    setState(() => _sendingReview = true);
+    try {
+      await TenantApiService.createDormReview(dormId: dormId, rating: rating, comment: comment);
+      await _loadReviews();
+      if (mounted) _showMessage('ส่งรีวิวเรียบร้อยแล้ว');
+    } on TenantApiException catch (e) { if (mounted) _showMessage(e.message); }
+    finally { if (mounted) setState(() => _sendingReview = false); }
+  }
+
+  /// ผู้เช่าส่งรายงานหอพัก -> บันทึกลง MySQL เพื่อให้ Admin ตรวจสอบ
+  Future<void> _reportDorm() async {
+    if (!_requireLogin('กรุณาเข้าสู่ระบบก่อนรายงานหอพัก')) return;
+    if (Session.role != 'tenant') {
+      _showMessage('ระบบรายงานหอพักเปิดให้บัญชีผู้เช่าใช้งาน');
+      return;
+    }
+    final dormId = _dormDbId;
+    if (dormId == null) {
+      _showMessage('ไม่พบรหัสหอพักจากฐานข้อมูล');
+      return;
+    }
+
+    const reasons = [
+      'ข้อมูลหอพักไม่ถูกต้อง',
+      'ราคา/รายละเอียดไม่ตรงกับความจริง',
+      'สงสัยการหลอกลวงหรือมิจฉาชีพ',
+      'สถานที่หรือประกาศไม่เหมาะสม',
+      'อื่น ๆ',
+    ];
+    String reason = reasons.first;
+    final detailController = TextEditingController();
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('รายงานหอพัก'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('เลือกเหตุผลที่ต้องการแจ้งผู้ดูแลระบบ'),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: reason,
+                isExpanded: true,
+                decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'เหตุผล'),
+                items: reasons.map((r) => DropdownMenuItem(value: r, child: Text(r, overflow: TextOverflow.ellipsis))).toList(),
+                onChanged: (value) { if (value != null) setDialogState(() => reason = value); },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: detailController,
+                maxLines: 4,
+                maxLength: 1000,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'รายละเอียดเพิ่มเติม (ไม่บังคับ)',
+                  hintText: 'อธิบายปัญหาที่พบ',
+                ),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('ยกเลิก')),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, {
+                'reason': reason,
+                'description': detailController.text.trim(),
+              }),
+              icon: const Icon(Icons.flag_outlined),
+              label: const Text('ส่งรายงาน'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final description = detailController.text.trim();
+    detailController.dispose();
+    if (result == null || !mounted || _sendingReport) return;
+
+    setState(() => _sendingReport = true);
+    try {
+      await TenantApiService.createDormReport(
+        dormId: dormId,
+        reason: result['reason']!,
+        description: result['description'] ?? description,
+      );
+      if (mounted) _showMessage('ส่งรายงานเรียบร้อยแล้ว ขอบคุณที่ช่วยแจ้งข้อมูล');
+    } on TenantApiException catch (e) {
+      if (mounted) _showMessage(e.message);
+    } finally {
+      if (mounted) setState(() => _sendingReport = false);
+    }
+  }
 
   /// ปุ่มแชท: เปิด (หรือสร้าง) ห้องแชทกับเจ้าของหอนี้บน server แล้วเข้าห้อง
   Future<void> _startChat() async {
@@ -610,7 +749,26 @@ class _DormDetailViewState extends State<DormDetailView> {
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
+            Tooltip(
+              message: 'รายงานหอพัก',
+              child: SizedBox(
+                width: 50,
+                height: 58,
+                child: OutlinedButton(
+                  onPressed: _sendingReport ? null : _reportDorm,
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(50, 58),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                  ),
+                  child: _sendingReport
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.flag_outlined, size: 22),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: SizedBox(
                 height: 58,
@@ -899,14 +1057,16 @@ class _DormDetailViewState extends State<DormDetailView> {
   Widget _reviewsSection() {
     final state = widget.consoleState;
     final dormId = widget.dorm['id']?.toString();
-    if (state == null || dormId == null) return _emptyReviews();
-    return AnimatedBuilder(
-      animation: state,
-      builder: (context, _) {
-        final reviews = state.visibleReviewsFor(dormId);
-        if (reviews.isEmpty) return _emptyReviews();
-        return Column(
-          children: reviews.map((r) {
+    final fallback = state?.visibleReviewsFor(dormId ?? '') ?? <Map<String, dynamic>>[];
+    final reviews = _reviewsLoadedFromServer ? _serverReviews : fallback;
+    return Column(children: [
+      if (Session.isLoggedIn && Session.role == 'tenant')
+        Align(alignment: Alignment.centerRight, child: OutlinedButton.icon(
+          onPressed: _sendingReview ? null : _writeReview,
+          icon: const Icon(Icons.rate_review_outlined),
+          label: Text(_sendingReview ? 'กำลังส่ง...' : 'เขียนรีวิว'),
+        )),
+      if (reviews.isEmpty) _emptyReviews() else ...reviews.map((r) {
             final rating = (r['rating'] as num).toInt();
             return AppCard(
               margin: const EdgeInsets.only(bottom: 10),
@@ -924,7 +1084,7 @@ class _DormDetailViewState extends State<DormDetailView> {
                           ),
                         ),
                         Text(
-                          r['date'].toString(),
+                          (r['date'] ?? r['createdAt'] ?? '').toString(),
                           style: const TextStyle(
                             fontSize: 11.5,
                             color: AppColors.muted,
@@ -955,9 +1115,7 @@ class _DormDetailViewState extends State<DormDetailView> {
               ),
             );
           }).toList(),
-        );
-      },
-    );
+    ]);
   }
 
   Widget _emptyReviews() => const AppCard(
