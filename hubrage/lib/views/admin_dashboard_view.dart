@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import 'admin_kyc_detail_view.dart';
 import 'admin_users_view.dart';
 import 'admin_payments_view.dart';
+import 'admin_reports_view.dart';
 
 class AdminDashboardView extends StatefulWidget {
   final AdminConsoleState consoleState;
@@ -335,7 +336,7 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
             children: [
               const Text(
-                'ศูนย์ควบคุมหลังบ้าน (Admin)',
+                'Overview • ศูนย์ควบคุมหลังบ้าน (Admin)',
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
@@ -352,7 +353,7 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
                 0 => _sellerList(),
                 1 => [const AdminUsersView()],
                 2 => [_paymentSection()],
-                3 => _reportList(),
+                3 => [AdminReportsView(consoleState: widget.consoleState)],
                 4 => _dormRequestList(),
                 5 => _kycRequestList(),
                 _ => _reviewList(),
@@ -460,7 +461,7 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
           children: [
             Expanded(
               child: _summaryCard(
-                'ผู้ขายใช้งาน',
+                'Owner ใช้งาน',
                 '$activeSellers',
                 'ราย',
                 Icons.store,
@@ -471,7 +472,7 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
             Expanded(
               child: _summaryCard(
                 'บัญชีถูกระงับ',
-                '$suspendedSellers',
+                '${widget.consoleState.overviewLoaded ? widget.consoleState.suspendedUsers : suspendedSellers}',
                 'ราย',
                 Icons.block,
                 AppColors.danger,
@@ -489,6 +490,22 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
             ),
           ],
         ),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: _summaryCard('Tenant ทั้งหมด', '${widget.consoleState.totalTenants}', 'ราย', Icons.people_outline, AppColors.accent)),
+          const SizedBox(width: 10),
+          Expanded(child: _summaryCard('Payment รอตรวจ', '${widget.consoleState.pendingPayments}', 'รายการ', Icons.payments_outlined, AppColors.warning)),
+          const SizedBox(width: 10),
+          Expanded(child: _summaryCard('Report รอตรวจ', '${widget.consoleState.pendingReportCount}', 'รายการ', Icons.flag_outlined, AppColors.danger)),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: _summaryCard('การจองทั้งหมด', '${widget.consoleState.totalBookings}', 'รายการ', Icons.event_available_outlined, AppColors.accent)),
+          const SizedBox(width: 10),
+          Expanded(child: _summaryCard('รีวิวทั้งหมด', '${widget.consoleState.totalReviews}', 'รายการ', Icons.star_outline, AppColors.warning)),
+          const SizedBox(width: 10),
+          Expanded(child: _summaryCard('หอรอตรวจ', '${widget.consoleState.pendingDormCount}', 'หอ', Icons.apartment_outlined, AppColors.danger)),
+        ]),
       ],
     );
   }
@@ -506,8 +523,10 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           _sectionChip('เจ้าของหอ', 0, Icons.store_outlined),
           _sectionChip('ผู้ใช้งาน', 1, Icons.people_alt_outlined),
-          _sectionChip('Payment', 2, Icons.payments_outlined),
-          _sectionChip('Report', 3, Icons.flag_outlined),
+          _sectionChip('Payment', 2, Icons.payments_outlined,
+              badge: widget.consoleState.pendingPayments),
+          _sectionChip('Report', 3, Icons.flag_outlined,
+              badge: widget.consoleState.pendingReportCount),
           _sectionChip('คำขอลงหอ', 4, Icons.fact_check_outlined,
               badge: widget.consoleState.pendingDormCount),
           _sectionChip('ตรวจ KYC', 5, Icons.verified_user_outlined,
@@ -537,28 +556,6 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
     ]),
   );
 
-  List<Widget> _reportList() {
-    final reported = widget.consoleState.sellers
-        .where((seller) => (int.tryParse('${seller['reports']}') ?? 0) > 0)
-        .toList();
-    return [
-      _sectionTitle('รายงานจากผู้ใช้งาน (${reported.length})'),
-      if (reported.isEmpty)
-        _emptyState(Icons.flag_outlined, 'ยังไม่มีรายงานจากผู้ใช้งาน'),
-      ...reported.map((seller) => AppCard(
-        margin: const EdgeInsets.only(bottom: 10),
-        child: ListTile(
-          leading: const CircleAvatar(backgroundColor: AppColors.warningSoft,
-            child: Icon(Icons.flag_outlined, color: AppColors.warning)),
-          title: Text('${seller['dorm']}', style: const TextStyle(fontWeight: FontWeight.w700)),
-          subtitle: Text('เจ้าของหอ: ${seller['name']}'),
-          trailing: StatusPill('${seller['reports']} รายงาน',
-            color: AppColors.warning, background: AppColors.warningSoft),
-          onTap: () => _showSellerDetails(seller),
-        ),
-      )),
-    ];
-  }
 
   Widget _sectionTitle(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
@@ -596,7 +593,7 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
   );
 
   List<Widget> _sellerList() => [
-    _sectionTitle('บัญชีเจ้าของหอ'),
+    _sectionTitle('จัดการ Owner / บัญชีเจ้าของหอ'),
     ...widget.consoleState.sellers.map((seller) {
       final suspended = seller['status'] == 'suspended';
       final verified = seller['kyc'] == 'verified';
