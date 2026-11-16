@@ -44,6 +44,15 @@ const optionalUser = (req, res, next) => {
 };
 app.use("/api/tenant", optionalUser, require("./Troutes/tenantRoutes")); // ระบบค้นหา/จอง (ของพี่): /api/tenant/...
 app.use("/api/admin", require("./admin_routes")(db, auth));    // ระบบแอดมิน: อนุมัติหอ / ระงับบัญชี
+// ระบบรายงานหอพัก: Tenant ส่งรายงาน -> Admin ตรวจสอบและเปลี่ยนสถานะ
+const reports = require("./report_routes")(db, auth);
+app.use("/api/tenant/reports", reports.tenantRouter);
+app.use("/api/admin/reports", reports.adminRouter);
+// ระบบรีวิว: Tenant ส่งรีวิว -> Admin ซ่อน/แสดง/ลบ -> ผู้ใช้เห็นเฉพาะรีวิวที่แสดง
+const reviews = require("./review_routes")(db, auth);
+app.use("/api/tenant/reviews", reviews.tenantRouter);
+app.use("/api/reviews", reviews.publicRouter);
+app.use("/api/admin/reviews", reviews.adminRouter);
 // ระบบจองห้องแบบจ่ายเงินผ่านแอดมิน + ผัง 2D + แจ้งเตือนในแชท (ไฟล์แยก)
 const bookingPayment = require("./booking_payment_routes");
 app.use("/api/booking", bookingPayment(db, auth, io, appCfg.jwt_secret));
@@ -72,8 +81,8 @@ require("./chat_socket").setupChatSocket(io, pool);
 
 const PORT = appCfg.port || 3000;
 // สร้างตารางของระบบจอง (ถ้ายังไม่มี) ก่อนเปิดรับ request -> ไม่ต้อง import SQL เอง
-bookingPayment.ensureSchema(pool)
-  .catch((err) => console.error("สร้างตารางระบบจองไม่สำเร็จ (ลอง node setup_booking_payment.js):", err.message))
+Promise.all([bookingPayment.ensureSchema(pool), reports.ensureSchema(), reviews.ensureSchema()])
+  .catch((err) => console.error("สร้างตารางระบบจอง/รายงาน/รีวิวไม่สำเร็จ:", err.message))
   .finally(() => httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log("แชท real time (Socket.IO) พร้อมใช้งาน"); // ไม่เห็นบรรทัดนี้ = รัน server.js ตัวเก่าอยู่
