@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../services/admin_api_service.dart';
@@ -8,21 +10,46 @@ import 'dorm_catalog.dart';
 /// - login ด้วยบัญชี admin -> โหลดเจ้าของหอ / คำขอลงประกาศหอ จาก server (/api/admin)
 ///   และปุ่มอนุมัติหอ / ระงับบัญชี จะบันทึกลง MySQL จริง ([serverMode] = true)
 /// - ยังไม่ได้ login เป็น admin -> ใช้ข้อมูลตัวอย่างในไฟล์นี้เหมือนเดิม
-/// (รีวิวยังเป็นข้อมูลตัวอย่าง เพราะฐานข้อมูลยังไม่มีตารางรีวิว)
+/// Overview, Owner, User, Payment, Report และ Review ใช้ข้อมูลจาก Backend/MySQL เมื่อ Admin login
 class AdminConsoleState extends ChangeNotifier {
   AdminConsoleState() {
     _mockSellers = sellers.map((s) => Map<String, dynamic>.from(s)).toList();
     _mockViews = Map<String, int>.from(dormViews);
+    _mockReviews = reviews.map((r) => Map<String, dynamic>.from(r)).toList();
     Session.loggedIn.addListener(_onSessionChanged);
-    if (AdminApiService.isAdmin) loadFromServer();
+    if (AdminApiService.isAdmin) {
+      loadFromServer();
+      _startReportPolling();
+    }
+  }
+
+  Timer? _reportsPoller;
+
+  void _startReportPolling() {
+    _reportsPoller?.cancel();
+    _reportsPoller = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (AdminApiService.isAdmin) {
+        refreshReports();
+        refreshReviews();
+        refreshOverview();
+      }
+    });
+  }
+
+  void _stopReportPolling() {
+    _reportsPoller?.cancel();
+    _reportsPoller = null;
   }
 
   late final List<Map<String, dynamic>> _mockSellers;
   late final Map<String, int> _mockViews;
+  late final List<Map<String, dynamic>> _mockReviews;
 
   /// true = ข้อมูลในหน้าแอดมินมาจาก server แล้ว
   bool serverMode = false;
   bool loadingServer = false;
+  Map<String, dynamic> overview = {};
+  bool overviewLoaded = false;
   String? serverError;
 
   final List<Map<String, dynamic>> sellers = [
@@ -121,6 +148,8 @@ class AdminConsoleState extends ChangeNotifier {
   ];
 
   final List<Map<String, dynamic>> dormRequests = [];
+  /// รายงานจริงจากตาราง dorm_reports เมื่อ login เป็น Admin
+  final List<Map<String, dynamic>> reports = [];
 
   final Set<String> temporarilyClosedDorms = {};
   final Map<String, int> dormViews = {
@@ -134,7 +163,10 @@ class AdminConsoleState extends ChangeNotifier {
   void _onSessionChanged() {
     if (AdminApiService.isAdmin) {
       loadFromServer();
-    } else if (serverMode || serverError != null) {
+      _startReportPolling();
+    } else {
+      _stopReportPolling();
+      if (serverMode || serverError != null) {
       // ออกจากบัญชีแอดมิน -> กลับไปใช้ข้อมูลตัวอย่าง
       serverMode = false;
       serverError = null;
@@ -142,10 +174,15 @@ class AdminConsoleState extends ChangeNotifier {
         ..clear()
         ..addAll(_mockSellers.map((s) => Map<String, dynamic>.from(s)));
       dormRequests.clear();
+      reports.clear();
+      overview.clear();
+      overviewLoaded = false;
+      reviews..clear()..addAll(_mockReviews.map((r) => Map<String, dynamic>.from(r)));
       dormViews
         ..clear()
         ..addAll(_mockViews);
       notifyListeners();
+      }
     }
   }
 
@@ -154,23 +191,36 @@ class AdminConsoleState extends ChangeNotifier {
     serverError = null;
     notifyListeners();
     try {
-      final results = await Future.wait([
-        AdminApiService.getSellers(),
-        AdminApiService.getDorms(status: 'all'),
-      ]);
+      final sellerRows = await AdminApiService.getSellers();
+      final dormRows = await AdminApiService.getDorms(status: 'all');
       sellers
         ..clear()
-        ..addAll(results[0].map(_sellerFromApi));
+        ..addAll(sellerRows.map(_sellerFromApi));
       dormRequests
         ..clear()
-        ..addAll(results[1].map(_dormFromApi));
+        ..addAll(dormRows.map(_dormFromApi));
       dormViews
         ..clear()
         ..addAll({
-          for (final d in results[1])
+          for (final d in dormRows)
             '${d['id']}': int.tryParse('${d['views']}') ?? 0,
         });
       serverMode = true;
+      try {
+        overview = await AdminApiService.getOverview();
+        overviewLoaded = true;
+      } on AdminApiException catch (e) {
+        serverError = 'โหลด Overview ไม่สำเร็จ: ${e.message}';
+      }
+      // โหลดแต่ละโมดูลแยกกัน เพื่อให้ปัญหาในโมดูลหนึ่งไม่ทำให้หน้า Admin ส่วนอื่นหยุดทำงาน
+      try {
+        final reportRows = await AdminApiService.getReports(status: 'all');
+        reports..clear()..addAll(reportRows.map(_reportFromApi));
+      } on AdminApiException catch (e) { serverError = 'โหลดรายงานไม่สำเร็จ: ${e.message}'; }
+      try {
+        final reviewRows = await AdminApiService.getReviews(status: 'all');
+        reviews..clear()..addAll(reviewRows.map(_reviewFromApi));
+      } on AdminApiException catch (e) { serverError = 'โหลดรีวิวไม่สำเร็จ: ${e.message}'; }
     } on AdminApiException catch (e) {
       serverError = e.message;
     } finally {
@@ -204,6 +254,32 @@ class AdminConsoleState extends ChangeNotifier {
         'bookings': _int(s['bookings']),
         'reports': _int(s['reports']),
         'lastActive': '-',
+      };
+
+  static Map<String, dynamic> _reportFromApi(Map<String, dynamic> r) => {
+        'id': '${r['id']}',
+        'dormId': '${r['dormId']}',
+        'dormName': r['dormName']?.toString() ?? '-',
+        'reporterId': '${r['reporterId']}',
+        'reporterName': r['reporterName']?.toString() ?? '-',
+        'reporterEmail': r['reporterEmail']?.toString() ?? '-',
+        'ownerId': '${r['ownerId']}',
+        'ownerName': r['ownerName']?.toString() ?? '-',
+        'reason': r['reason']?.toString() ?? '-',
+        'description': r['description']?.toString() ?? '',
+        'status': r['status']?.toString() ?? 'pending',
+        'adminNote': r['adminNote']?.toString() ?? '',
+        'createdAt': _thaiDate(r['createdAt']),
+        'reviewedBy': r['reviewedBy']?.toString() ?? '-',
+      };
+
+  static Map<String, dynamic> _reviewFromApi(Map<String, dynamic> r) => {
+        'id': '${r['id']}', 'dormId': '${r['dormId']}',
+        'dormName': r['dormName']?.toString() ?? '-',
+        'author': r['author']?.toString() ?? '-',
+        'rating': _int(r['rating']), 'comment': r['comment']?.toString() ?? '',
+        'date': _thaiDate(r['createdAt']), 'status': r['status']?.toString() ?? 'visible',
+        'adminNote': r['adminNote']?.toString() ?? '',
       };
 
   static Map<String, dynamic> _dormFromApi(Map<String, dynamic> d) => {
@@ -244,13 +320,79 @@ class AdminConsoleState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _stopReportPolling();
     Session.loggedIn.removeListener(_onSessionChanged);
     super.dispose();
   }
 
-  int get totalViews => dormViews.values.fold(0, (sum, value) => sum + value);
+  int get totalViews => overviewLoaded ? _int(overview['total_views']) : dormViews.values.fold(0, (sum, value) => sum + value);
+  int get totalTenants => overviewLoaded ? _int(overview['tenants']) : 0;
+  int get totalOwners => overviewLoaded ? _int(overview['sellers']) : sellers.length;
+  int get suspendedUsers => overviewLoaded ? _int(overview['suspended']) : sellers.where((s) => s['status'] == 'suspended').length;
+  int get pendingPayments => overviewLoaded ? _int(overview['pending_payments']) : 0;
+  int get totalBookings => overviewLoaded ? _int(overview['bookings']) : 0;
+  int get totalReviews => overviewLoaded ? _int(overview['total_reviews']) : reviews.length;
   int get pendingDormCount =>
       dormRequests.where((request) => request['status'] == 'pending').length;
+
+  int get pendingReportCount =>
+      reports.where((r) => r['status'] == 'pending').length;
+
+  Future<void> refreshOverview() async {
+    if (!AdminApiService.isAdmin) return;
+    try {
+      overview = await AdminApiService.getOverview();
+      overviewLoaded = true;
+      serverError = null;
+    } on AdminApiException catch (e) { serverError = e.message; }
+    notifyListeners();
+  }
+
+  Future<void> refreshReports() async {
+    if (!AdminApiService.isAdmin) return;
+    try {
+      final rows = await AdminApiService.getReports(status: 'all');
+      reports
+        ..clear()
+        ..addAll(rows.map(_reportFromApi));
+      serverError = null;
+    } on AdminApiException catch (e) {
+      serverError = e.message;
+    }
+    notifyListeners();
+  }
+
+  Future<bool> updateReportStatus(
+    String reportId,
+    String status, {
+    String? adminNote,
+  }) async {
+    final report = reports.firstWhere((r) => r['id'] == reportId);
+    final oldStatus = report['status'];
+    final oldNote = report['adminNote'];
+    report['status'] = status;
+    if (adminNote != null) report['adminNote'] = adminNote;
+    notifyListeners();
+    final id = int.tryParse(reportId);
+    if (!serverMode || id == null) {
+      report['status'] = oldStatus;
+      report['adminNote'] = oldNote;
+      notifyListeners();
+      return false;
+    }
+    try {
+      await AdminApiService.setReportStatus(id, status, adminNote: adminNote);
+      serverError = null;
+      notifyListeners();
+      return true;
+    } on AdminApiException catch (e) {
+      report['status'] = oldStatus;
+      report['adminNote'] = oldNote;
+      serverError = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
 
   void suspendSeller(String sellerId, bool suspend) {
     final seller = sellers.firstWhere((item) => item['id'] == sellerId);
@@ -379,18 +521,39 @@ class AdminConsoleState extends ChangeNotifier {
       )
       .toList();
 
-  int get hiddenReviewCount =>
-      reviews.where((r) => r['status'] == 'hidden').length;
+  int get hiddenReviewCount => reviews.where((r) => r['status'] == 'hidden').length;
 
-  void setReviewHidden(String reviewId, bool hidden) {
-    final review = reviews.firstWhere((r) => r['id'] == reviewId);
-    review['status'] = hidden ? 'hidden' : 'visible';
+  Future<void> refreshReviews() async {
+    if (!AdminApiService.isAdmin) return;
+    try {
+      final rows = await AdminApiService.getReviews(status: 'all');
+      reviews..clear()..addAll(rows.map(_reviewFromApi));
+      serverError = null;
+    } on AdminApiException catch (e) { serverError = e.message; }
     notifyListeners();
   }
 
-  void deleteReview(String reviewId) {
-    reviews.removeWhere((r) => r['id'] == reviewId);
+  void setReviewHidden(String reviewId, bool hidden) {
+    final review = reviews.firstWhere((r) => r['id'] == reviewId);
+    final before = review['status'];
+    review['status'] = hidden ? 'hidden' : 'visible';
     notifyListeners();
+    final id = int.tryParse(reviewId);
+    if (serverMode && id != null) {
+      _sync(() => AdminApiService.setReviewStatus(id, hidden ? 'hidden' : 'visible'),
+        () => review['status'] = before);
+    }
+  }
+
+  void deleteReview(String reviewId) {
+    final index = reviews.indexWhere((r) => r['id'] == reviewId);
+    if (index < 0) return;
+    final removed = reviews.removeAt(index);
+    notifyListeners();
+    final id = int.tryParse(reviewId);
+    if (serverMode && id != null) {
+      _sync(() => AdminApiService.deleteReview(id), () => reviews.insert(index, removed));
+    }
   }
 
   void recordDormView(String dormId) {
