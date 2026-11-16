@@ -30,6 +30,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
+const createAdminController = require("./Tcontrollers/adminController");
 
 const HOLD_MINUTES = 30;
 
@@ -193,6 +194,11 @@ module.exports = (db, auth, io, jwtSecret) => {
     const [[row]] = await db.query(RESERVATION_SQL + " WHERE p.id = ?", [id]);
     return row ? decorate(row) : null;
   };
+
+  // ส่ง helper ของระบบจองให้ adminController จัดการ endpoint ตรวจการชำระเงิน
+  const adminController = createAdminController(db, {
+    STATUS_LABEL, expireStale, RESERVATION_SQL, decorate, getReservation, notifyChat, money,
+  });
 
   // ───────────────────────── ผัง 2D ─────────────────────────
   router.get("/dorms/:dormId/plan", optionalUser, async (req, res) => {
@@ -378,45 +384,8 @@ module.exports = (db, auth, io, jwtSecret) => {
   // ───────────────────────── แอดมิน ─────────────────────────
   const adminOnly = auth.requireRole("admin");
 
-  router.get("/admin/payments", adminOnly, async (req, res) => {
-    const status = String(req.query.status || "paid");
-    if (status !== "all" && !STATUS_LABEL[status]) return fail(res, 400, "status ไม่ถูกต้อง");
-    await expireStale();
-    const [rows] = await db.query(
-      RESERVATION_SQL + (status === "all" ? "" : " WHERE p.status = ?") + " ORDER BY p.paid_at DESC, p.id DESC",
-      status === "all" ? [] : [status]
-    );
-    res.json({ success: true, data: rows.map(decorate) });
-  });
-
-  router.patch("/admin/payments/:id", adminOnly, async (req, res) => {
-    const id = toId(req.params.id);
-    if (!id) return fail(res, 400, "เลขรายการไม่ถูกต้อง");
-    if (typeof req.body?.approve !== "boolean") return fail(res, 400, "ต้องส่ง approve เป็น true หรือ false");
-    const approve = req.body.approve;
-    const note = typeof req.body.note === "string" ? req.body.note.slice(0, 500) : null;
-
-    const [r] = await db.query(
-      `UPDATE booking_payments p JOIN bookings b ON b.id = p.booking_id
-          SET p.status = ?, p.admin_id = ?, p.admin_reviewed_at = NOW(), p.admin_note = ?,
-              b.status = IF(?, b.status, 'cancelled')
-        WHERE p.id = ? AND p.status = 'paid'`,
-      [approve ? "approved" : "rejected", req.user.id, note, approve, id]
-    );
-    if (r.affectedRows === 0) return fail(res, 400, "อนุมัติได้เฉพาะรายการที่ชำระเงินแล้วและรอตรวจสอบ");
-
-    const v = await getReservation(id);
-    if (approve) {
-      await notifyChat({
-        dormId: v.dormId, tenantId: v.tenantId, ownerId: v.ownerId, senderId: v.tenantId,
-        text: `[แจ้งเตือนจากระบบ] ${v.tenantName} จองห้อง ${v.roomNumber} (${v.planLabel}) ` +
-              `เข้าพัก ${v.startsAt} ถึง ${v.endsAt}\n` +
-              `ชำระเงิน ${money(v.paidAmount)} บาทแล้ว แอดมินตรวจสอบยอดเงินถูกต้อง\n` +
-              `รอเจ้าของหอยืนยันการจอง`,
-      });
-    }
-    res.json({ success: true, data: v });
-  });
+  router.get("/admin/payments", adminOnly, adminController.getAdminPayments);
+  router.patch("/admin/payments/:id", adminOnly, adminController.reviewAdminPayment);
 
   // ───────────────────────── เจ้าของหอ ─────────────────────────
   const ownerOnly = auth.requireRole("seller");
