@@ -64,6 +64,23 @@ module.exports = (db, auth) => {
     res.json({ success: true, count: rows.length, data: rows });
   });
 
+  // รายชื่อผู้เช่าและเจ้าของหอสำหรับหน้า Admin User Management
+  router.get("/users", async (req, res) => {
+    const role = (req.query.role || "all").toString();
+    if (!["all", "tenant", "seller"].includes(role)) {
+      return fail(res, 400, "role ต้องเป็น all, tenant หรือ seller");
+    }
+    const [rows] = await db.query(
+      `SELECT id, email, full_name AS name, phone, role,
+              account_status AS status, created_at AS joined
+         FROM users
+        WHERE role IN ('tenant', 'seller') ${role === "all" ? "" : "AND role = ?"}
+        ORDER BY created_at DESC, id DESC`,
+      role === "all" ? [] : [role]
+    );
+    res.json({ success: true, count: rows.length, data: rows });
+  });
+
   router.patch("/users/:id/status", async (req, res) => {
     const id = toId(req.params.id);
     if (!id) return fail(res, 400, "id ไม่ถูกต้อง");
