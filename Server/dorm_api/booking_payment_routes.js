@@ -30,6 +30,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
+const { notify } = require("./notification_routes");
 
 const HOLD_MINUTES = 30;
 
@@ -413,6 +414,13 @@ module.exports = (db, auth, io, jwtSecret) => {
               `เข้าพัก ${v.startsAt} ถึง ${v.endsAt}\n` +
               `ชำระเงิน ${money(v.paidAmount)} บาทแล้ว แอดมินตรวจสอบยอดเงินถูกต้อง\n` +
               `รอเจ้าของหอยืนยันการจอง`,
+      });
+      // แจ้งเตือนที่กระดิ่งของเจ้าของหอ (เก็บในตาราง notifications)
+      await notify(db, {
+        userId: v.ownerId, type: "deposit_approved", refId: id,
+        title: "แอดมินตรวจสอบค่ามัดจำแล้ว",
+        body: `${v.tenantName} จองห้อง ${v.roomNumber} (${v.planLabel}) ` +
+              `ค่ามัดจำ ${money(v.paidAmount)} บาท แอดมินตรวจสอบยอดเงินถูกต้อง รอคุณยืนยันการจอง`,
       });
     }
     res.json({ success: true, data: v });

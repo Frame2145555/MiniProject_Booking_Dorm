@@ -122,6 +122,7 @@ class ReservationCard extends StatelessWidget {
     required this.reservation,
     this.showTenant = false,
     this.showPayment = false,
+    this.showDeposit = false,
     this.actions = const [],
     this.onTap,
   });
@@ -129,6 +130,9 @@ class ReservationCard extends StatelessWidget {
   final Reservation reservation;
   final bool showTenant;
   final bool showPayment;
+
+  /// เจ้าของหอ: แสดงค่ามัดจำที่ผู้เช่าจ่ายมาแล้ว (ยอดที่แอดมินตรวจรับ)
+  final bool showDeposit;
   final List<Widget> actions;
   final VoidCallback? onTap;
 
@@ -170,6 +174,16 @@ class ReservationCard extends StatelessWidget {
                 ),
                 if (r.paymentRef != null) InfoRow('เลขอ้างอิง', r.paymentRef!),
                 if (r.paidAt != null) InfoRow('ชำระเมื่อ', _time(r.paidAt!)),
+              ],
+              if (showDeposit && !showPayment && r.paidAmount != null) ...[
+                InfoRow(
+                  'ค่ามัดจำที่ชำระแล้ว',
+                  '${formatBaht(r.paidAmount!)} บาท',
+                  valueColor: AppColors.success,
+                  bold: true,
+                ),
+                if (r.paidAt != null) InfoRow('ชำระเมื่อ', _time(r.paidAt!)),
+                if (r.paymentRef != null) InfoRow('เลขอ้างอิง', r.paymentRef!),
               ],
               if ((r.ownerNote ?? r.adminNote) != null)
                 InfoRow('หมายเหตุ', (r.ownerNote ?? r.adminNote)!),

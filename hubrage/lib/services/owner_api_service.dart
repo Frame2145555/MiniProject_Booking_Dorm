@@ -41,6 +41,10 @@ class OwnerApiService {
   static Future<Map<String, dynamic>> getDashboardStats() =>
       _send('GET', '/api/owner/dashboard/stats');
 
+  /// รายได้จากการจองที่เจ้าของหอยืนยันแล้ว (owner_revenue_routes.js)
+  static Future<Map<String, dynamic>> getRevenue({int? year}) =>
+      _send('GET', '/api/owner/revenue${year == null ? '' : '?year=$year'}');
+
   static Future<List<Map<String, dynamic>>> getDorms() async {
     final response = await _send('GET', '/api/owner/dorms');
     final data = response['data'];
@@ -126,6 +130,16 @@ class OwnerApiService {
     Map<String, dynamic> room,
   ) => _send('POST', '/api/owner/dorms/$dormId/rooms', body: room);
 
+  /// แก้ไขข้อมูลห้อง (เลขห้อง / ประเภท / ราคา) -- สถานะห้องใช้ setRoomStatus
+  static Future<Map<String, dynamic>> updateRoom(
+    String roomId,
+    Map<String, dynamic> room,
+  ) => _send('PUT', '/api/owner/rooms/$roomId', body: room);
+
+  /// ลบห้อง (server จะไม่ให้ลบถ้ามีผู้เช่าอยู่หรือมีประวัติการจอง)
+  static Future<Map<String, dynamic>> deleteRoom(String roomId) =>
+      _send('DELETE', '/api/owner/rooms/$roomId');
+
   static Future<void> setRoomStatus(String roomId, String status) async {
     await _send(
       'PATCH',
@@ -155,6 +169,7 @@ class OwnerApiService {
         'POST' => http.post(uri, headers: headers, body: jsonEncode(body)),
         'PUT' => http.put(uri, headers: headers, body: jsonEncode(body)),
         'PATCH' => http.patch(uri, headers: headers, body: jsonEncode(body)),
+        'DELETE' => http.delete(uri, headers: headers),
         _ => throw ArgumentError.value(method, 'method', 'Unsupported method'),
       };
       final response = await request.timeout(const Duration(seconds: 15));
