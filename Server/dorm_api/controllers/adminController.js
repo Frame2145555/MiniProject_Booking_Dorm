@@ -51,7 +51,7 @@ module.exports = (db, paymentHelpers = {}) => {
                (SELECT COUNT(*) FROM rooms r JOIN dorms d ON d.id = r.dorm_id WHERE d.owner_id = u.id) AS rooms,
                (SELECT COUNT(*) FROM bookings b JOIN rooms r ON r.id = b.room_id JOIN dorms d ON d.id = r.dorm_id WHERE d.owner_id = u.id) AS bookings,
                (SELECT COUNT(*) FROM dorm_view_events v JOIN dorms d ON d.id = v.dorm_id WHERE d.owner_id = u.id) AS views,
-               (SELECT COUNT(*) FROM dorm_reports p JOIN dorms d ON d.id = p.dorm_id WHERE d.owner_id = u.id) AS reports,
+               (SELECT COUNT(*) FROM user_dorm_reports p JOIN dorms d ON d.id = p.dorm_id WHERE d.owner_id = u.id) AS reports,
                (SELECT k.status FROM kyc_requests k WHERE k.seller_id = u.id ORDER BY k.id DESC LIMIT 1) AS kyc
           FROM users u WHERE u.role = 'seller' ORDER BY u.id`);
       res.json({ success: true, count: rows.length, data: rows });

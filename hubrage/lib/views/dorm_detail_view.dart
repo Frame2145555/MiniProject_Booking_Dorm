@@ -42,6 +42,7 @@ class _DormDetailViewState extends State<DormDetailView> {
   bool _loadingRooms = false;
   String? _roomsError;
   int? _bookingRoomId; // ห้องที่กำลังส่งคำขอจอง
+  bool _submittingReport = false;
 
   @override
   void initState() {
@@ -265,7 +266,10 @@ class _DormDetailViewState extends State<DormDetailView> {
       return;
     }
     try {
-      await TenantApiService.createVisitRequest(dormId: dormId, visitAt: visitAt);
+      await TenantApiService.createVisitRequest(
+        dormId: dormId,
+        visitAt: visitAt,
+      );
       if (mounted) {
         _showMessage('ส่งคำขอนัดดูห้องแล้ว รอเจ้าของหอตอบรับ');
       }
@@ -274,9 +278,45 @@ class _DormDetailViewState extends State<DormDetailView> {
     }
   }
 
+  Future<void> _reportDorm() async {
+    if (!_requireLogin('กรุณาเข้าสู่ระบบก่อนรายงานประกาศ')) return;
+    if (Session.role != 'tenant') {
+      _showMessage('เฉพาะบัญชีผู้เช่าส่งรายงานได้');
+      return;
+    }
+    final dormId = _dormDbId;
+    if (dormId == null || _submittingReport) {
+      _showMessage('ไม่สามารถรายงานหอนี้ได้');
+      return;
+    }
+
+    final report = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (_) => _DormReportDialog(title: _title),
+    );
+    if (report == null || !mounted) return;
+
+    setState(() => _submittingReport = true);
+    try {
+      await TenantApiService.createDormReport(
+        dormId: dormId,
+        category: report['category']!,
+        description: report['description']!,
+      );
+      if (mounted) {
+        _showMessage('ส่งรายงานให้แอดมินแล้ว ขอบคุณที่ช่วยแจ้งข้อมูล');
+      }
+    } on TenantApiException catch (e) {
+      if (mounted) _showMessage(e.message);
+    } finally {
+      if (mounted) setState(() => _submittingReport = false);
+    }
+  }
+
   /// จองห้อง: ยืนยัน -> POST /api/tenant/bookings -> เจ้าของหอเห็นในหน้าของเขา
   /// จองห้อง -> เปิดผังห้อง 2D (เลือกระยะเวลาเช่า + ชำระเงินผ่านแอดมิน) โดยเลือกห้องนี้ไว้ให้
-  Future<void> _bookRoom(Map<String, dynamic> room) => _openRoomPlan(roomId: int.tryParse('${room['id']}'));
+  Future<void> _bookRoom(Map<String, dynamic> room) =>
+      _openRoomPlan(roomId: int.tryParse('${room['id']}'));
 
   Future<void> _openRoomPlan({int? roomId}) async {
     final dormId = _dormDbId;
@@ -287,7 +327,11 @@ class _DormDetailViewState extends State<DormDetailView> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => RoomPlanView(dormId: dormId, dormName: _title, initialRoomId: roomId),
+        builder: (_) => RoomPlanView(
+          dormId: dormId,
+          dormName: _title,
+          initialRoomId: roomId,
+        ),
       ),
     );
     if (mounted) _loadDetail(); // สถานะห้องอาจเปลี่ยน
@@ -341,9 +385,14 @@ class _DormDetailViewState extends State<DormDetailView> {
         return AppCard(
           margin: const EdgeInsets.only(bottom: 10),
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 4,
+            ),
             leading: CircleAvatar(
-              backgroundColor: available ? AppColors.accentSoft : AppColors.field,
+              backgroundColor: available
+                  ? AppColors.accentSoft
+                  : AppColors.field,
               child: Icon(
                 Icons.meeting_room_outlined,
                 color: available ? AppColors.accent : AppColors.muted,
@@ -360,8 +409,12 @@ class _DormDetailViewState extends State<DormDetailView> {
             ),
             trailing: available
                 ? ElevatedButton(
-                    onPressed: _bookingRoomId == null ? () => _bookRoom(room) : null,
-                    style: ElevatedButton.styleFrom(minimumSize: const Size(64, 38)),
+                    onPressed: _bookingRoomId == null
+                        ? () => _bookRoom(room)
+                        : null,
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(64, 38),
+                    ),
                     child: booking
                         ? const SizedBox(
                             width: 16,
@@ -406,26 +459,26 @@ class _DormDetailViewState extends State<DormDetailView> {
                     itemBuilder: (_, i) => DormGalleryImage(_galleryImages[i]),
                   )
                 else
-                Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.photo_library_rounded,
-                        size: 52,
-                        color: Colors.white.withOpacity(0.25),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'รูปภาพห้องพัก & มุมมอง 360°',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.55),
-                          fontWeight: FontWeight.w600,
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.photo_library_rounded,
+                          size: 52,
+                          color: Colors.white.withOpacity(0.25),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+                        Text(
+                          'รูปภาพห้องพัก & มุมมอง 360°',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.55),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -751,6 +804,23 @@ class _DormDetailViewState extends State<DormDetailView> {
                       fontSize: 13.5,
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _submittingReport ? null : _reportDorm,
+                      icon: _submittingReport
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.flag_outlined),
+                      label: Text(
+                        _submittingReport ? 'กำลังส่ง...' : 'รายงานประกาศนี้',
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 28),
                   const _SectionHeader(
                     'สิ่งอำนวยความสะดวก',
@@ -968,7 +1038,10 @@ class _DormDetailViewState extends State<DormDetailView> {
         backgroundColor: AppColors.field,
         child: Icon(Icons.person_outline, color: AppColors.muted),
       ),
-      title: Text('ยังไม่มีรีวิว', style: TextStyle(fontWeight: FontWeight.w700)),
+      title: Text(
+        'ยังไม่มีรีวิว',
+        style: TextStyle(fontWeight: FontWeight.w700),
+      ),
       subtitle: Text(
         'รีวิวจะแสดงเมื่อมีผู้เช่าให้คะแนน',
         style: TextStyle(fontSize: 12, color: AppColors.muted),
@@ -1030,6 +1103,108 @@ class _DormDetailViewState extends State<DormDetailView> {
         ),
       ],
     ),
+  );
+}
+
+class _DormReportDialog extends StatefulWidget {
+  final String title;
+
+  const _DormReportDialog({required this.title});
+
+  @override
+  State<_DormReportDialog> createState() => _DormReportDialogState();
+}
+
+class _DormReportDialogState extends State<_DormReportDialog> {
+  static const _categories = {
+    'misleading': 'ข้อมูลหอพักไม่ถูกต้องหรือทำให้เข้าใจผิด',
+    'safety': 'ความปลอดภัยหรือสภาพห้องพัก',
+    'pricing': 'ราคา/ค่าใช้จ่ายไม่ตรงกับประกาศ',
+    'inappropriate': 'เนื้อหาไม่เหมาะสม',
+    'unavailable': 'หอพักไม่มีอยู่จริงหรือปิดให้บริการแล้ว',
+    'other': 'อื่น ๆ',
+  };
+
+  final _details = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  String _category = _categories.keys.first;
+
+  @override
+  void dispose() {
+    _details.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('รายงานประกาศหอพัก'),
+    content: SingleChildScrollView(
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.title,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _category,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'หัวข้อรายงาน'),
+              items: _categories.entries
+                  .map(
+                    (entry) => DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(
+                        entry.value,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) setState(() => _category = value);
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _details,
+              minLines: 3,
+              maxLines: 5,
+              maxLength: 1000,
+              validator: (value) => (value?.trim().length ?? 0) < 10
+                  ? 'กรุณาอธิบายอย่างน้อย 10 ตัวอักษร'
+                  : null,
+              decoration: const InputDecoration(
+                labelText: 'รายละเอียด',
+                hintText: 'อธิบายปัญหาอย่างน้อย 10 ตัวอักษร',
+                alignLabelWithHint: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('ยกเลิก'),
+      ),
+      ElevatedButton(
+        onPressed: () {
+          if (!_formKey.currentState!.validate()) return;
+          Navigator.pop(context, {
+            'category': _category,
+            'description': _details.text.trim(),
+          });
+        },
+        child: const Text('ส่งรายงาน'),
+      ),
+    ],
   );
 }
 

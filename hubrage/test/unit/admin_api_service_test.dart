@@ -49,4 +49,49 @@ void main() {
       throwsA(isA<AdminApiException>()),
     );
   });
+
+  test(
+    'loads persisted dorm reports and reviews one with an admin note',
+    () async {
+      Session.token = 'admin-token';
+      Session.role = 'admin';
+      final requests = <http.Request>[];
+      AdminApiService.client = MockClient((request) async {
+        requests.add(request);
+        if (request.method == 'GET') {
+          return http.Response(
+            jsonEncode({
+              'data': [
+                {'id': 8, 'dormName': 'หอทดสอบ', 'status': 'pending'},
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
+        return http.Response(
+          jsonEncode({'success': true}),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      });
+
+      final reports = await AdminApiService.getReports();
+      await AdminApiService.reviewReport(
+        8,
+        status: 'resolved',
+        note: 'ตรวจสอบแล้ว',
+      );
+
+      expect(reports.single['dormName'], 'หอทดสอบ');
+      expect(requests[0].url.path, '/api/admin/reports');
+      expect(requests[0].url.queryParameters['status'], 'all');
+      expect(requests[1].method, 'PATCH');
+      expect(requests[1].url.path, '/api/admin/reports/8');
+      expect(jsonDecode(requests[1].body), {
+        'status': 'resolved',
+        'note': 'ตรวจสอบแล้ว',
+      });
+    },
+  );
 }

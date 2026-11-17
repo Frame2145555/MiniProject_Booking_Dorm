@@ -155,6 +155,70 @@ exports.getDormById = async (req, res) => {
   }
 };
 
+// 2.5 ผู้เช่ารายงานประกาศหอที่มีปัญหา
+exports.createDormReport = async (req, res) => {
+  const dormId = Number(req.params.dormId);
+  const tenantId = req.user?.id;
+  const { category, description } = req.body || {};
+  const categories = ['misleading', 'safety', 'pricing', 'inappropriate', 'unavailable', 'other'];
+  const details = typeof description === 'string' ? description.trim() : '';
+
+  if (req.user?.role !== 'tenant') {
+    return res.status(403).json({ success: false, message: 'เฉพาะบัญชีผู้เช่าส่งรายงานได้' });
+  }
+  if (!Number.isSafeInteger(dormId) || dormId <= 0) {
+    return res.status(400).json({ success: false, message: 'เลขหอพักไม่ถูกต้อง' });
+  }
+  if (!categories.includes(category)) {
+    return res.status(400).json({ success: false, message: 'กรุณาเลือกประเภทการรายงาน' });
+  }
+  if (details.length < 10 || details.length > 1000) {
+    return res.status(400).json({ success: false, message: 'รายละเอียดต้องมีความยาว 10 ถึง 1,000 ตัวอักษร' });
+  }
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [dorms] = await connection.query(
+      `SELECT id FROM dorms
+        WHERE id = ? AND approval_status = 'approved' AND listing_status = 'active'
+        FOR UPDATE`,
+      [dormId]
+    );
+    if (!dorms.length) {
+      await connection.rollback();
+      return res.status(404).json({ success: false, message: 'ไม่พบประกาศหอพักนี้' });
+    }
+
+    const [existing] = await connection.query(
+      `SELECT id FROM user_dorm_reports
+        WHERE dorm_id = ? AND reporter_id = ? AND status = 'pending'
+        LIMIT 1`,
+      [dormId, tenantId]
+    );
+    if (existing.length) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, message: 'คุณส่งรายงานหอนี้และกำลังรอตรวจสอบอยู่แล้ว' });
+    }
+
+    const [result] = await connection.query(
+      `INSERT INTO user_dorm_reports (dorm_id, reporter_id, category, description)
+       VALUES (?, ?, ?, ?)`,
+      [dormId, tenantId, category, details]
+    );
+    await connection.commit();
+    res.status(201).json({
+      success: true,
+      data: { id: result.insertId, dormId, status: 'pending' },
+    });
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
 // 3. กดบันทึก / ยกเลิก รายการโปรด (Toggle Favorite)
 exports.toggleFavorite = async (req, res) => {
   try {

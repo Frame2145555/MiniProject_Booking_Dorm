@@ -1,4 +1,3 @@
-
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -30,21 +29,46 @@ class AdminApiService {
   static Future<List<Map<String, dynamic>>> getUsers() async =>
       _list((await _send('GET', '/api/admin/users'))['data']);
 
+  static Future<List<Map<String, dynamic>>> getReports({
+    String status = 'all',
+  }) async =>
+      _list((await _send('GET', '/api/admin/reports?status=$status'))['data']);
+
+  static Future<void> reviewReport(
+    int reportId, {
+    required String status,
+    required String note,
+  }) => _send(
+    'PATCH',
+    '/api/admin/reports/$reportId',
+    body: {'status': status, 'note': note},
+  );
+
   /// status: pending | approved | rejected | all
-  static Future<List<Map<String, dynamic>>> getDorms({String status = 'all'}) async =>
+  static Future<List<Map<String, dynamic>>> getDorms({
+    String status = 'all',
+  }) async =>
       _list((await _send('GET', '/api/admin/dorms?status=$status'))['data']);
 
-  static Future<void> setDormApproval(int dormId, bool approve, {String? reason}) =>
-      _send('PATCH', '/api/admin/dorms/$dormId/approval', body: {
-        'approve': approve,
-        if (reason != null) 'reason': reason,
-      });
+  static Future<void> setDormApproval(
+    int dormId,
+    bool approve, {
+    String? reason,
+  }) => _send(
+    'PATCH',
+    '/api/admin/dorms/$dormId/approval',
+    body: {'approve': approve, if (reason != null) 'reason': reason},
+  );
 
-  static Future<void> setUserSuspended(int userId, bool suspend, {String? reason}) =>
-      _send('PATCH', '/api/admin/users/$userId/status', body: {
-        'suspend': suspend,
-        if (reason != null) 'reason': reason,
-      });
+  static Future<void> setUserSuspended(
+    int userId,
+    bool suspend, {
+    String? reason,
+  }) => _send(
+    'PATCH',
+    '/api/admin/users/$userId/status',
+    body: {'suspend': suspend, if (reason != null) 'reason': reason},
+  );
 
   static List<Map<String, dynamic>> _list(Object? raw) => raw is List
       ? raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()

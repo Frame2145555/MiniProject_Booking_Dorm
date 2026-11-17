@@ -24,6 +24,7 @@ class AdminConsoleState extends ChangeNotifier {
   bool serverMode = false;
   bool loadingServer = false;
   String? serverError;
+  final List<Map<String, dynamic>> reports = [];
 
   final List<Map<String, dynamic>> sellers = [
     {
@@ -142,6 +143,7 @@ class AdminConsoleState extends ChangeNotifier {
         ..clear()
         ..addAll(_mockSellers.map((s) => Map<String, dynamic>.from(s)));
       dormRequests.clear();
+      reports.clear();
       dormViews
         ..clear()
         ..addAll(_mockViews);
@@ -157,6 +159,7 @@ class AdminConsoleState extends ChangeNotifier {
       final results = await Future.wait([
         AdminApiService.getSellers(),
         AdminApiService.getDorms(status: 'all'),
+        AdminApiService.getReports(),
       ]);
       sellers
         ..clear()
@@ -164,6 +167,9 @@ class AdminConsoleState extends ChangeNotifier {
       dormRequests
         ..clear()
         ..addAll(results[1].map(_dormFromApi));
+      reports
+        ..clear()
+        ..addAll(results[2]);
       dormViews
         ..clear()
         ..addAll({
@@ -179,56 +185,82 @@ class AdminConsoleState extends ChangeNotifier {
     }
   }
 
+  Future<String?> reviewReport(
+    int reportId, {
+    required String status,
+    required String note,
+  }) async {
+    try {
+      await AdminApiService.reviewReport(reportId, status: status, note: note);
+      await loadFromServer();
+      return null;
+    } on AdminApiException catch (e) {
+      return e.message;
+    }
+  }
+
   static String _thaiDate(Object? raw) {
     final t = DateTime.tryParse(raw?.toString() ?? '')?.toLocal();
     if (t == null) return '-';
-    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-        'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const months = [
+      'ม.ค.',
+      'ก.พ.',
+      'มี.ค.',
+      'เม.ย.',
+      'พ.ค.',
+      'มิ.ย.',
+      'ก.ค.',
+      'ส.ค.',
+      'ก.ย.',
+      'ต.ค.',
+      'พ.ย.',
+      'ธ.ค.',
+    ];
     return '${t.day.toString().padLeft(2, '0')} ${months[t.month - 1]} ${t.year}';
   }
 
   static int _int(Object? v) => int.tryParse('$v') ?? 0;
 
   static Map<String, dynamic> _sellerFromApi(Map<String, dynamic> s) => {
-        'id': '${s['id']}',
-        'dormId': s['dormId'] == null ? '' : '${s['dormId']}',
-        'name': s['name']?.toString() ?? '-',
-        'email': s['email']?.toString() ?? '-',
-        'phone': s['phone']?.toString() ?? '-',
-        'dorm': s['dorm']?.toString() ?? 'ยังไม่มีหอพัก',
-        'kyc': s['kyc'] == 'approved' ? 'verified' : 'pending',
-        'status': s['status']?.toString() ?? 'active',
-        'joined': _thaiDate(s['joined']),
-        'views': _int(s['views']),
-        'rooms': _int(s['rooms']),
-        'bookings': _int(s['bookings']),
-        'reports': _int(s['reports']),
-        'lastActive': '-',
-      };
+    'id': '${s['id']}',
+    'dormId': s['dormId'] == null ? '' : '${s['dormId']}',
+    'name': s['name']?.toString() ?? '-',
+    'email': s['email']?.toString() ?? '-',
+    'phone': s['phone']?.toString() ?? '-',
+    'dorm': s['dorm']?.toString() ?? 'ยังไม่มีหอพัก',
+    'kyc': s['kyc'] == 'approved' ? 'verified' : 'pending',
+    'status': s['status']?.toString() ?? 'active',
+    'joined': _thaiDate(s['joined']),
+    'views': _int(s['views']),
+    'rooms': _int(s['rooms']),
+    'bookings': _int(s['bookings']),
+    'reports': _int(s['reports']),
+    'lastActive': '-',
+  };
 
   static Map<String, dynamic> _dormFromApi(Map<String, dynamic> d) => {
-        'id': '${d['id']}',
-        'sellerId': '${d['sellerId']}',
-        'sellerName': d['sellerName']?.toString() ?? '-',
-        'dormId': '${d['id']}',
-        'dormName': d['dormName']?.toString() ?? '-',
-        'phone': d['phone']?.toString() ?? '-',
-        'location': d['location']?.toString() ?? '-',
-        'latitude': double.tryParse('${d['latitude']}'),
-        'longitude': double.tryParse('${d['longitude']}'),
-        'description': d['description']?.toString() ?? '',
-        'priceMin': _int(d['priceMin']),
-        'priceMax': _int(d['priceMax']),
-        'amenities': List<String>.from((d['amenities'] as List?) ?? const []),
-        'imageUrl': d['imageUrl']?.toString() ?? '',
-        'images': const [],
-        'documents': ((d['documents'] as List?) ?? const [])
-            .whereType<Map>()
-            .map((doc) => Map<String, dynamic>.from(doc))
-            .toList(),
-        'status': d['status']?.toString() ?? 'pending',
-        'submittedAt': 'ส่งคำขอเมื่อ ${_thaiDate(d['submittedAt'])}',
-      };
+    'id': '${d['id']}',
+    'sellerId': '${d['sellerId']}',
+    'sellerName': d['sellerName']?.toString() ?? '-',
+    'dormId': '${d['id']}',
+    'dormName': d['dormName']?.toString() ?? '-',
+    'phone': d['phone']?.toString() ?? '-',
+    'location': d['location']?.toString() ?? '-',
+    'latitude': double.tryParse('${d['latitude']}'),
+    'longitude': double.tryParse('${d['longitude']}'),
+    'description': d['description']?.toString() ?? '',
+    'priceMin': _int(d['priceMin']),
+    'priceMax': _int(d['priceMax']),
+    'amenities': List<String>.from((d['amenities'] as List?) ?? const []),
+    'imageUrl': d['imageUrl']?.toString() ?? '',
+    'images': const [],
+    'documents': ((d['documents'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((doc) => Map<String, dynamic>.from(doc))
+        .toList(),
+    'status': d['status']?.toString() ?? 'pending',
+    'submittedAt': 'ส่งคำขอเมื่อ ${_thaiDate(d['submittedAt'])}',
+  };
 
   /// เรียก API -> ถ้าไม่สำเร็จ ย้อนค่ากลับ ([undo]) แล้วเก็บข้อความ error ไว้แสดง
   Future<void> _sync(Future<void> Function() call, VoidCallback undo) async {
@@ -280,7 +312,8 @@ class AdminConsoleState extends ChangeNotifier {
     required int priceMax,
     required List<String> amenities,
     required String imageUrl,
-    List<dynamic> images = const [], // รูปเพิ่มเติม: String (ลิงก์) หรือ Uint8List
+    List<dynamic> images =
+        const [], // รูปเพิ่มเติม: String (ลิงก์) หรือ Uint8List
     required List<Map<String, String>> documents,
   }) {
     dormRequests.insert(0, {
@@ -313,13 +346,10 @@ class AdminConsoleState extends ChangeNotifier {
     notifyListeners();
     final dormId = int.tryParse(requestId);
     if (serverMode && dormId != null) {
-      _sync(
-        () async {
-          await AdminApiService.setDormApproval(dormId, approve);
-          DormCatalog.live.load(); // หอที่อนุมัติแล้วขึ้นในหน้าผู้เช่าทันที
-        },
-        () => request['status'] = before,
-      );
+      _sync(() async {
+        await AdminApiService.setDormApproval(dormId, approve);
+        DormCatalog.live.load(); // หอที่อนุมัติแล้วขึ้นในหน้าผู้เช่าทันที
+      }, () => request['status'] = before);
     }
   }
 

@@ -72,6 +72,19 @@ class TenantApiService {
     );
   }
 
+  static Future<void> createDormReport({
+    required int dormId,
+    required String category,
+    required String description,
+  }) async {
+    await _send(
+      'POST',
+      '/api/tenant/dorms/$dormId/reports',
+      body: {'category': category, 'description': description},
+      needLogin: true,
+    );
+  }
+
   static Future<void> createBooking({
     required int roomId,
     DateTime? startsAt,
@@ -81,7 +94,8 @@ class TenantApiService {
       '/api/tenant/bookings',
       body: {
         'roomId': roomId,
-        if (startsAt != null) 'startsAt': formatDateTime(startsAt).substring(0, 10),
+        if (startsAt != null)
+          'startsAt': formatDateTime(startsAt).substring(0, 10),
       },
       needLogin: true,
     );

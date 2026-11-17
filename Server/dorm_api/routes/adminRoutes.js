@@ -48,7 +48,7 @@ module.exports = (db, auth) => {
                JOIN dorms d ON d.id = r.dorm_id WHERE d.owner_id = u.id)                 AS bookings,
              (SELECT COUNT(*) FROM dorm_view_events v JOIN dorms d ON d.id = v.dorm_id
                WHERE d.owner_id = u.id)                                                  AS views,
-             (SELECT COUNT(*) FROM dorm_reports p JOIN dorms d ON d.id = p.dorm_id
+             (SELECT COUNT(*) FROM user_dorm_reports p JOIN dorms d ON d.id = p.dorm_id
                WHERE d.owner_id = u.id)                                                  AS reports,
              (SELECT k.status FROM kyc_requests k WHERE k.seller_id = u.id
                ORDER BY k.id DESC LIMIT 1)                                               AS kyc
@@ -56,6 +56,61 @@ module.exports = (db, auth) => {
        WHERE u.role = 'seller'
        ORDER BY u.id`);
     res.json({ success: true, count: rows.length, data: rows });
+  });
+
+  router.get("/reports", async (req, res) => {
+    const status = String(req.query.status || "pending");
+    const statuses = ["pending", "resolved", "dismissed"];
+    if (status !== "all" && !statuses.includes(status)) {
+      return fail(res, 400, "status ต้องเป็น pending, resolved, dismissed หรือ all");
+    }
+    const [rows] = await db.query(
+      `SELECT r.id, r.dorm_id AS dormId, d.name AS dormName, d.owner_id AS ownerId,
+              owner.full_name AS ownerName, r.reporter_id AS reporterId,
+              reporter.full_name AS reporterName, reporter.email AS reporterEmail,
+              r.category, r.description, r.status, r.admin_note AS adminNote,
+              r.created_at AS createdAt, r.reviewed_at AS reviewedAt
+         FROM user_dorm_reports r
+         JOIN dorms d ON d.id = r.dorm_id
+         JOIN users owner ON owner.id = d.owner_id
+         JOIN users reporter ON reporter.id = r.reporter_id
+        ${status === "all" ? "" : "WHERE r.status = ?"}
+        ORDER BY (r.status = 'pending') DESC, r.created_at DESC, r.id DESC`,
+      status === "all" ? [] : [status]
+    );
+    res.json({ success: true, count: rows.length, data: rows });
+  });
+
+  router.patch("/reports/:id", async (req, res) => {
+    const id = toId(req.params.id);
+    const status = req.body?.status;
+    if (!id) return fail(res, 400, "เลขรายงานไม่ถูกต้อง");
+    if (!["resolved", "dismissed"].includes(status)) {
+      return fail(res, 400, 'status ต้องเป็น "resolved" หรือ "dismissed"');
+    }
+    const note = typeof req.body.note === "string" ? req.body.note.trim().slice(0, 500) : "";
+    if (!note) return fail(res, 400, "กรุณาระบุหมายเหตุการตรวจสอบ");
+
+    const [[pendingReport]] = await db.query(
+      "SELECT dorm_id AS dormId FROM user_dorm_reports WHERE id = ? AND status = 'pending'",
+      [id]
+    );
+    if (!pendingReport) return fail(res, 409, "ไม่พบรายงานที่รอตรวจ หรือรายการนี้ถูกตรวจไปแล้ว");
+
+    const [result] = await db.query(
+      `UPDATE user_dorm_reports
+          SET status = ?, admin_id = ?, admin_note = ?, reviewed_at = NOW()
+        WHERE id = ? AND status = 'pending'`,
+      [status, req.user.id, note, id]
+    );
+    if (!result.affectedRows) return fail(res, 409, "ไม่พบรายงานที่รอตรวจ หรือรายการนี้ถูกตรวจไปแล้ว");
+    await audit(req.user.id, `dorm_report_${status}`, "dorm", pendingReport.dormId, note);
+    const [[report]] = await db.query(
+      `SELECT id, dorm_id AS dormId, status, admin_note AS adminNote, reviewed_at AS reviewedAt
+         FROM user_dorm_reports WHERE id = ?`,
+      [id]
+    );
+    res.json({ success: true, data: report });
   });
 
   // รายชื่อผู้เช่าและเจ้าของหอสำหรับหน้า Admin User Management

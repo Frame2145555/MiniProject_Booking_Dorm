@@ -109,6 +109,15 @@ npm run chat:cli -- seller@test.com                 # แชทผ่าน term
 | แอดมิน | `GET /api/booking/admin/payments?status=paid` · `PATCH /api/booking/admin/payments/:id` `{approve, note}` |
 | เจ้าของหอ | `GET /api/booking/owner/reservations?status=approved` · `PATCH /api/booking/owner/reservations/:id` `{action: confirm/reject}` · `GET/PUT /api/booking/owner/dorms/:dormId/plans` |
 
+## รายงานประกาศหอจากผู้เช่า
+ตาราง `user_dorm_reports` สร้างให้อัตโนมัติตอนเปิด `server.js` จาก `sql/user_dorm_reports.sql`
+
+ผู้เช่าที่เข้าสู่ระบบส่งรายงานหอที่เปิดประกาศอยู่ได้ที่ `POST /api/tenant/dorms/:dormId/reports`
+โดยส่ง `{category, description}`; ผู้ใช้ส่งรายงานซ้ำหอเดิมขณะที่มีรายงานรอตรวจไม่ได้
+แอดมินดูรายการผ่าน `GET /api/admin/reports?status=pending|resolved|dismissed|all`
+และปิดรายการผ่าน `PATCH /api/admin/reports/:id` ด้วย `{status: resolved|dismissed, note}`
+คำสั่งปิดเรื่องต้องมีหมายเหตุ และบันทึกผู้ตรวจ/วันตรวจพร้อม audit log
+
 ## ยังไม่มี
 - **รีวิว** และ **KYC** ในหน้าแอดมินยังเป็นข้อมูลตัวอย่าง (ฐานข้อมูลยังไม่มีตารางรีวิว / ยังไม่มี API อัปโหลดเอกสาร KYC)
 - อัปโหลดรูป/ไฟล์เอกสารจริง (ตอนนี้เก็บแค่ลิงก์รูปและชื่อไฟล์)

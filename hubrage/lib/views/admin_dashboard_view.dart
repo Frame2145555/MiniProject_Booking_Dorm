@@ -18,6 +18,7 @@ class AdminDashboardView extends StatefulWidget {
 
 class _AdminDashboardViewState extends State<AdminDashboardView> {
   int _selectedSection = 0;
+  String _reportFilter = 'pending';
 
   final List<KYCRequestModel> _kycList = [
     KYCRequestModel(
@@ -81,7 +82,9 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
                               ? 'บัญชีกำลังใช้งาน'
                               : 'บัญชีถูกระงับ',
                           style: TextStyle(
-                            color: suspended ? AppColors.danger : AppColors.success,
+                            color: suspended
+                                ? AppColors.danger
+                                : AppColors.success,
                           ),
                         ),
                       ],
@@ -295,7 +298,10 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('ปฏิเสธ', style: TextStyle(color: AppColors.danger)),
+            child: const Text(
+              'ปฏิเสธ',
+              style: TextStyle(color: AppColors.danger),
+            ),
           ),
           ElevatedButton(
             onPressed: documents.isEmpty
@@ -381,7 +387,8 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
     } else if (state.serverMode) {
       return const SizedBox.shrink();
     } else {
-      text = 'ข้อมูลตัวอย่าง — เข้าสู่ระบบด้วยบัญชีแอดมิน (admin@test.com) '
+      text =
+          'ข้อมูลตัวอย่าง — เข้าสู่ระบบด้วยบัญชีแอดมิน (admin@test.com) '
           'เพื่ออนุมัติหอและระงับบัญชีจริง';
       icon = Icons.info_outline;
     }
@@ -503,41 +510,130 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          _sectionChip('เจ้าของหอ', 0, Icons.store_outlined),
-          _sectionChip('ผู้ใช้งาน', 1, Icons.people_alt_outlined),
-          _sectionChip('Payment', 2, Icons.payments_outlined),
-          _sectionChip('Report', 3, Icons.flag_outlined),
-          _sectionChip('คำขอลงหอ', 4, Icons.fact_check_outlined,
-              badge: widget.consoleState.pendingDormCount),
-          _sectionChip('ตรวจ KYC', 5, Icons.verified_user_outlined,
-              badge: _pendingKycCount),
-          _sectionChip('รีวิว', 6, Icons.rate_review_outlined,
-              badge: widget.consoleState.hiddenReviewCount),
-        ]),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _sectionChip('เจ้าของหอ', 0, Icons.store_outlined),
+            _sectionChip('ผู้ใช้งาน', 1, Icons.people_alt_outlined),
+            _sectionChip('Payment', 2, Icons.payments_outlined),
+            _sectionChip(
+              'Report',
+              3,
+              Icons.flag_outlined,
+              badge: widget.consoleState.serverMode
+                  ? widget.consoleState.reports
+                        .where((r) => r['status'] == 'pending')
+                        .length
+                  : 0,
+            ),
+            _sectionChip(
+              'คำขอลงหอ',
+              4,
+              Icons.fact_check_outlined,
+              badge: widget.consoleState.pendingDormCount,
+            ),
+            _sectionChip(
+              'ตรวจ KYC',
+              5,
+              Icons.verified_user_outlined,
+              badge: _pendingKycCount,
+            ),
+            _sectionChip(
+              'รีวิว',
+              6,
+              Icons.rate_review_outlined,
+              badge: widget.consoleState.hiddenReviewCount,
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _paymentSection() => AppCard(
     padding: const EdgeInsets.all(20),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Icon(Icons.payments_outlined, size: 34, color: AppColors.accent),
-      const SizedBox(height: 10),
-      const Text('ตรวจสอบการชำระเงิน', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-      const SizedBox(height: 6),
-      const Text('ตรวจสอบหลักฐานและยอดชำระของผู้เช่า พร้อมอนุมัติหรือปฏิเสธรายการ', style: TextStyle(color: AppColors.muted)),
-      const SizedBox(height: 14),
-      SizedBox(width: double.infinity, child: ElevatedButton.icon(
-        onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => const AdminPaymentsView(),
-        )),
-        icon: const Icon(Icons.open_in_new), label: const Text('เปิดหน้าตรวจสอบ Payment'),
-      )),
-    ]),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.payments_outlined, size: 34, color: AppColors.accent),
+        const SizedBox(height: 10),
+        const Text(
+          'ตรวจสอบการชำระเงิน',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'ตรวจสอบหลักฐานและยอดชำระของผู้เช่า พร้อมอนุมัติหรือปฏิเสธรายการ',
+          style: TextStyle(color: AppColors.muted),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminPaymentsView()),
+            ),
+            icon: const Icon(Icons.open_in_new),
+            label: const Text('เปิดหน้าตรวจสอบ Payment'),
+          ),
+        ),
+      ],
+    ),
   );
 
   List<Widget> _reportList() {
+    if (widget.consoleState.serverMode ||
+        widget.consoleState.loadingServer ||
+        widget.consoleState.serverError != null) {
+      if (widget.consoleState.loadingServer) {
+        return [
+          _sectionTitle('รายงานจากผู้ใช้งาน'),
+          const Center(child: CircularProgressIndicator()),
+        ];
+      }
+      if (widget.consoleState.serverError != null) {
+        return [
+          _sectionTitle('รายงานจากผู้ใช้งาน'),
+          _emptyState(
+            Icons.cloud_off_outlined,
+            widget.consoleState.serverError!,
+          ),
+        ];
+      }
+      final allReports = widget.consoleState.reports;
+      final reports = allReports
+          .where(
+            (report) =>
+                _reportFilter == 'all' || report['status'] == _reportFilter,
+          )
+          .toList();
+      const filters = {
+        'pending': 'รอตรวจ',
+        'resolved': 'จัดการแล้ว',
+        'dismissed': 'ไม่รับเรื่อง',
+        'all': 'ทั้งหมด',
+      };
+      return [
+        _sectionTitle('รายงานจากผู้ใช้งาน'),
+        Wrap(
+          spacing: 8,
+          children: filters.entries
+              .map(
+                (filter) => ChoiceChip(
+                  label: Text(filter.value),
+                  selected: _reportFilter == filter.key,
+                  onSelected: (_) => setState(() => _reportFilter = filter.key),
+                ),
+              )
+              .toList(),
+        ),
+        const SizedBox(height: 12),
+        if (reports.isEmpty)
+          _emptyState(Icons.flag_outlined, 'ไม่มีรายงานในหมวดนี้'),
+        ...reports.map(_reportCard),
+      ];
+    }
+
     final reported = widget.consoleState.sellers
         .where((seller) => (int.tryParse('${seller['reports']}') ?? 0) > 0)
         .toList();
@@ -545,19 +641,170 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
       _sectionTitle('รายงานจากผู้ใช้งาน (${reported.length})'),
       if (reported.isEmpty)
         _emptyState(Icons.flag_outlined, 'ยังไม่มีรายงานจากผู้ใช้งาน'),
-      ...reported.map((seller) => AppCard(
-        margin: const EdgeInsets.only(bottom: 10),
-        child: ListTile(
-          leading: const CircleAvatar(backgroundColor: AppColors.warningSoft,
-            child: Icon(Icons.flag_outlined, color: AppColors.warning)),
-          title: Text('${seller['dorm']}', style: const TextStyle(fontWeight: FontWeight.w700)),
-          subtitle: Text('เจ้าของหอ: ${seller['name']}'),
-          trailing: StatusPill('${seller['reports']} รายงาน',
-            color: AppColors.warning, background: AppColors.warningSoft),
-          onTap: () => _showSellerDetails(seller),
+      ...reported.map(
+        (seller) => AppCard(
+          margin: const EdgeInsets.only(bottom: 10),
+          child: ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: AppColors.warningSoft,
+              child: Icon(Icons.flag_outlined, color: AppColors.warning),
+            ),
+            title: Text(
+              '${seller['dorm']}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text('เจ้าของหอ: ${seller['name']}'),
+            trailing: StatusPill(
+              '${seller['reports']} รายงาน',
+              color: AppColors.warning,
+              background: AppColors.warningSoft,
+            ),
+            onTap: () => _showSellerDetails(seller),
+          ),
         ),
-      )),
+      ),
     ];
+  }
+
+  Widget _reportCard(Map<String, dynamic> report) {
+    const categories = {
+      'misleading': 'ข้อมูลไม่ถูกต้อง/ทำให้เข้าใจผิด',
+      'safety': 'ความปลอดภัยหรือสภาพห้องพัก',
+      'pricing': 'ราคา/ค่าใช้จ่ายไม่ตรง',
+      'inappropriate': 'เนื้อหาไม่เหมาะสม',
+      'unavailable': 'หอพักปิดหรือไม่มีอยู่จริง',
+      'other': 'อื่น ๆ',
+    };
+    final id = int.tryParse('${report['id']}');
+    final pending = report['status'] == 'pending';
+    final statusLabel = switch (report['status']) {
+      'pending' => 'รอตรวจ',
+      'resolved' => 'จัดการแล้ว',
+      'dismissed' => 'ไม่รับเรื่อง',
+      _ => '${report['status']}',
+    };
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.flag_outlined, color: AppColors.warning),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  report['dormName']?.toString() ?? 'หอพัก',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              StatusPill(
+                statusLabel,
+                color: pending ? AppColors.warning : AppColors.success,
+                background: pending
+                    ? AppColors.warningSoft
+                    : AppColors.successSoft,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('เจ้าของหอ: ${report['ownerName'] ?? '-'}'),
+          Text(
+            'ผู้รายงาน: ${report['reporterName'] ?? '-'} • ${report['reporterEmail'] ?? '-'}',
+          ),
+          const SizedBox(height: 8),
+          Text(
+            categories[report['category']] ?? 'อื่น ๆ',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(report['description']?.toString() ?? ''),
+          if (report['adminNote'] != null &&
+              '${report['adminNote']}'.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text('บันทึกแอดมิน: ${report['adminNote']}'),
+          ],
+          if (pending && id != null) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _reviewDormReport(report, 'dismissed'),
+                    child: const Text('ไม่รับเรื่อง'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => _reviewDormReport(report, 'resolved'),
+                    child: const Text('จัดการแล้ว'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _reviewDormReport(
+    Map<String, dynamic> report,
+    String status,
+  ) async {
+    final noteController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final note = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(status == 'resolved' ? 'ปิดรายงาน' : 'ไม่รับรายงาน'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: noteController,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 500,
+            validator: (value) => value == null || value.trim().isEmpty
+                ? 'กรุณาระบุหมายเหตุการตรวจสอบ'
+                : null,
+            decoration: const InputDecoration(
+              labelText: 'หมายเหตุการตรวจสอบ',
+              hintText: 'ระบุผลการตรวจสอบ',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('ยกเลิก'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(dialogContext, noteController.text.trim());
+              }
+            },
+            child: const Text('บันทึก'),
+          ),
+        ],
+      ),
+    );
+    noteController.dispose();
+    final id = int.tryParse('${report['id']}');
+    if (note == null || id == null) return;
+
+    final error = await widget.consoleState.reviewReport(
+      id,
+      status: status,
+      note: note,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(error ?? 'บันทึกผลตรวจรายงานแล้ว')));
   }
 
   Widget _sectionTitle(String text) => Padding(
@@ -927,9 +1174,9 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
     );
     if (ok == true && mounted) {
       widget.consoleState.deleteReview(review['id'].toString());
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ลบรีวิวแล้ว')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('ลบรีวิวแล้ว')));
     }
   }
 
@@ -1001,7 +1248,9 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
                   children: List.generate(
                     5,
                     (i) => Icon(
-                      i < rating ? Icons.star_rounded : Icons.star_border_rounded,
+                      i < rating
+                          ? Icons.star_rounded
+                          : Icons.star_border_rounded,
                       size: 18,
                       color: AppColors.star,
                     ),
@@ -1042,7 +1291,10 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
                           foregroundColor: AppColors.danger,
                           side: const BorderSide(color: AppColors.danger),
                         ),
-                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                        ),
                         label: const Text('ลบ'),
                       ),
                     ),
@@ -1062,7 +1314,12 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
       width: 94,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => setState(() => _selectedSection = index),
+        onTap: () {
+          setState(() => _selectedSection = index);
+          if (index == 3 && widget.consoleState.serverMode) {
+            widget.consoleState.loadFromServer();
+          }
+        },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),

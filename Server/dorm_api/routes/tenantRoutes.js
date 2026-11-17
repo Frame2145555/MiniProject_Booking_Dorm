@@ -11,6 +11,7 @@ router.get('/dorms/:id', tenantController.getDormById);
 router.use(requireAuth);
 
 router.post('/dorms/favorite', tenantController.toggleFavorite);
+router.post('/dorms/:dormId/reports', tenantController.createDormReport);
 router.post('/visit-requests', tenantController.createVisitRequest);
 router.post('/bookings', tenantController.createBooking);
 router.get('/bookings/my-bookings', tenantController.getMyBookingsAndVisits);
