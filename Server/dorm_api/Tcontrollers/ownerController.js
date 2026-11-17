@@ -103,8 +103,9 @@ exports.getOwnerDorms = async (req, res) => {
           room_number AS roomNumber,
           room_type AS roomType,
           price_per_month AS price,
+          floor,
           status
-         FROM rooms WHERE dorm_id = ? ORDER BY room_number ASC`,
+         FROM rooms WHERE dorm_id = ? ORDER BY floor ASC, room_number ASC`,
         [dorm.id]
       );
       dorm.roomsList = rooms;
