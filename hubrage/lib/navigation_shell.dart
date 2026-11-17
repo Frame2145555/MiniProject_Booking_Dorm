@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'models/user_role.dart';
 import 'views/home_view.dart';
@@ -13,6 +15,8 @@ import 'views/admin_payments_view.dart';
 import 'views/owner_reservations_view.dart';
 import 'models/dorm_catalog.dart';
 import 'services/admin_api_service.dart';
+import 'services/session.dart';
+import 'services/tenant_api_service.dart';
 import 'models/admin_console_state.dart';
 import 'models/favorites_state.dart';
 import 'theme/app_theme.dart';
@@ -31,6 +35,7 @@ class _NavigationShellState extends State<NavigationShell> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   UserRole _currentRole = UserRole.tenant;
   int _currentIndex = 0;
+  bool _hasUnreadNotifications = true;
 
   /// แถบบน (header) ยุบ/แสดงได้ — หน้าค้นหาของผู้เช่าสั่งยุบตอนเลื่อนรายการลง
   final ValueNotifier<bool> _headerVisible = ValueNotifier<bool>(true);
@@ -70,11 +75,16 @@ class _NavigationShellState extends State<NavigationShell> {
   @override
   void initState() {
     super.initState();
+    Session.loggedIn.addListener(_onSessionChanged);
     DormCatalog.live.load(); // โหลดรายการหอจริงจาก server ตั้งแต่เปิดแอป
+    if (Session.isLoggedIn && Session.role == 'tenant') {
+      unawaited(_refreshNotificationBadge());
+    }
   }
 
   @override
   void dispose() {
+    Session.loggedIn.removeListener(_onSessionChanged);
     _consoleState.dispose();
     _favorites.dispose();
     _headerVisible.dispose();
@@ -86,12 +96,67 @@ class _NavigationShellState extends State<NavigationShell> {
     setState(() => _currentIndex = index);
   }
 
+  void _onSessionChanged() {
+    if (!Session.isLoggedIn || Session.role != 'tenant') {
+      setState(() => _hasUnreadNotifications = true);
+      return;
+    }
+    unawaited(_refreshNotificationBadge());
+  }
+
+  Future<void> _refreshNotificationBadge() async {
+    try {
+      final notifications = await TenantApiService.getNotifications();
+      if (!mounted) return;
+      setState(
+        () => _hasUnreadNotifications = notifications.any(
+          (notification) => notification['isRead'] != true,
+        ),
+      );
+    } on TenantApiException {
+      // The notification button retries the request and surfaces the error.
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    if (!Session.isLoggedIn || Session.role != 'tenant') {
+      await showNotificationsSheet(context);
+      return;
+    }
+
+    try {
+      final notifications = await TenantApiService.getNotifications();
+      if (!mounted) return;
+      setState(
+        () => _hasUnreadNotifications = notifications.any(
+          (notification) => notification['isRead'] != true,
+        ),
+      );
+      await showNotificationsSheet(context, notifications: notifications);
+
+      if (notifications.any(
+        (notification) => notification['isRead'] != true,
+      )) {
+        await TenantApiService.markNotificationsRead();
+      }
+      if (mounted) setState(() => _hasUnreadNotifications = false);
+    } on TenantApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+
   void _onRoleChanged(UserRole newRole) {
     _headerVisible.value = true;
     // สลับโหมดแล้วดึงข้อมูลล่าสุด (เช่น เจ้าของเพิ่งเพิ่มหอ -> แอดมินเห็นคำขอใหม่)
     if (newRole == UserRole.tenant) DormCatalog.live.load();
     if (newRole == UserRole.admin && AdminApiService.isAdmin) {
       _consoleState.loadFromServer();
+    }
+    if (newRole == UserRole.tenant && Session.role == 'tenant') {
+      unawaited(_refreshNotificationBadge());
     }
     setState(() {
       _currentRole = newRole;
@@ -149,7 +214,8 @@ class _NavigationShellState extends State<NavigationShell> {
               child: AppTopBar(
                 subtitle: isTenant ? null : _roleLabel,
                 onMenu: () => _scaffoldKey.currentState?.openDrawer(),
-                onNotifications: () => showNotificationsSheet(context),
+                onNotifications: _openNotifications,
+                hasUnread: _hasUnreadNotifications,
                 // ผู้เช่า: บัญชีอยู่ขวาบน ถัดจากกระดิ่งแจ้งเตือน
                 onAccount: isTenant ? _openAccount : null,
               ),

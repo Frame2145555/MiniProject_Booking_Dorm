@@ -1,9 +1,14 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
-import '../../lib/models/admin_console_state.dart';
-import '../../lib/services/session.dart';
-import '../../lib/views/admin_dashboard_view.dart';
+import 'package:hubrage/models/admin_console_state.dart';
+import 'package:hubrage/services/admin_api_service.dart';
+import 'package:hubrage/services/session.dart';
+import 'package:hubrage/views/admin_dashboard_view.dart';
 
 void main() {
   late AdminConsoleState consoleState;
@@ -14,6 +19,7 @@ void main() {
   });
 
   tearDown(() {
+    AdminApiService.client = null;
     consoleState.dispose();
     Session.clear();
   });
@@ -62,5 +68,74 @@ void main() {
 
     expect(find.text('คำขอ KYC รอตรวจ 1 รายการ'), findsOneWidget);
     expect(find.text('อนุมัติแล้ว'), findsOneWidget);
+  });
+
+  testWidgets('admin can resolve a report without a disposed note controller', (
+    tester,
+  ) async {
+    Session.token = 'admin-token';
+    Session.role = 'admin';
+    expect(AdminApiService.isAdmin, isTrue);
+    final requests = <http.Request>[];
+    var reportResolved = false;
+    final report = {
+      'id': 17,
+      'dormName': 'หอทดสอบ',
+      'ownerName': 'เจ้าของหอ',
+      'reporterName': 'ผู้เช่าทดสอบ',
+      'reporterEmail': 'tenant@example.com',
+      'category': 'safety',
+      'description': 'พบปัญหาด้านความปลอดภัย',
+      'status': 'pending',
+    };
+    AdminApiService.client = MockClient((request) async {
+      requests.add(request);
+      if (request.method == 'PATCH') {
+        reportResolved = true;
+        return http.Response(
+          jsonEncode({'success': true}),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }
+      if (request.url.path == '/api/admin/reports') {
+        return http.Response(
+          jsonEncode({
+            'data': reportResolved ? [] : [report],
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }
+      return http.Response(
+        jsonEncode({'data': []}),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+    });
+    consoleState.reports.add(report);
+
+    await pumpDashboard(tester);
+    await tester.tap(find.text('Report'));
+    await tester.pumpAndSettle();
+    consoleState
+      ..serverMode = true
+      ..notifyListeners();
+    await tester.pumpAndSettle();
+    expect(consoleState.reports, hasLength(1));
+    expect(find.text('พบปัญหาด้านความปลอดภัย'), findsOneWidget);
+    await tester.tap(find.widgetWithText(ElevatedButton, 'จัดการแล้ว'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ปิดรายงาน'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField), 'ตรวจสอบและแก้ไขแล้ว');
+    await tester.tap(find.text('บันทึก'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(
+      requests.map((request) => '${request.method} ${request.url.path}'),
+      contains('PATCH /api/admin/reports/17'),
+    );
   });
 }

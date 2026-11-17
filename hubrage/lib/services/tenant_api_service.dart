@@ -85,6 +85,30 @@ class TenantApiService {
     );
   }
 
+  static Future<List<Map<String, dynamic>>> getNotifications() async {
+    final response = await _send(
+      'GET',
+      '/api/tenant/notifications',
+      needLogin: true,
+    );
+    return _list(response['data']).map((notification) {
+      final isRead = notification['isRead'];
+      return {
+        ...notification,
+        'isRead': isRead == true || isRead == 1 || isRead == '1',
+      };
+    }).toList();
+  }
+
+  static Future<void> markNotificationsRead() async {
+    await _send(
+      'PATCH',
+      '/api/tenant/notifications/read',
+      body: const {},
+      needLogin: true,
+    );
+  }
+
   static Future<void> createBooking({
     required int roomId,
     DateTime? startsAt,

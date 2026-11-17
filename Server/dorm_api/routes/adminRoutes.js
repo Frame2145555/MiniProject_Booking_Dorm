@@ -91,26 +91,67 @@ module.exports = (db, auth) => {
     const note = typeof req.body.note === "string" ? req.body.note.trim().slice(0, 500) : "";
     if (!note) return fail(res, 400, "กรุณาระบุหมายเหตุการตรวจสอบ");
 
-    const [[pendingReport]] = await db.query(
-      "SELECT dorm_id AS dormId FROM user_dorm_reports WHERE id = ? AND status = 'pending'",
-      [id]
-    );
-    if (!pendingReport) return fail(res, 409, "ไม่พบรายงานที่รอตรวจ หรือรายการนี้ถูกตรวจไปแล้ว");
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [[pendingReport]] = await connection.query(
+        `SELECT r.dorm_id AS dormId, r.reporter_id AS reporterId, d.name AS dormName
+           FROM user_dorm_reports r
+           JOIN dorms d ON d.id = r.dorm_id
+          WHERE r.id = ? AND r.status = 'pending'
+          FOR UPDATE`,
+        [id]
+      );
+      if (!pendingReport) {
+        await connection.rollback();
+        return fail(res, 409, "ไม่พบรายงานที่รอตรวจ หรือรายการนี้ถูกตรวจไปแล้ว");
+      }
 
-    const [result] = await db.query(
-      `UPDATE user_dorm_reports
-          SET status = ?, admin_id = ?, admin_note = ?, reviewed_at = NOW()
-        WHERE id = ? AND status = 'pending'`,
-      [status, req.user.id, note, id]
-    );
-    if (!result.affectedRows) return fail(res, 409, "ไม่พบรายงานที่รอตรวจ หรือรายการนี้ถูกตรวจไปแล้ว");
-    await audit(req.user.id, `dorm_report_${status}`, "dorm", pendingReport.dormId, note);
-    const [[report]] = await db.query(
-      `SELECT id, dorm_id AS dormId, status, admin_note AS adminNote, reviewed_at AS reviewedAt
-         FROM user_dorm_reports WHERE id = ?`,
-      [id]
-    );
-    res.json({ success: true, data: report });
+      const [result] = await connection.query(
+        `UPDATE user_dorm_reports
+            SET status = ?, admin_id = ?, admin_note = ?, reviewed_at = NOW()
+          WHERE id = ? AND status = 'pending'`,
+        [status, req.user.id, note, id]
+      );
+      if (!result.affectedRows) {
+        await connection.rollback();
+        return fail(res, 409, "ไม่พบรายงานที่รอตรวจ หรือรายการนี้ถูกตรวจไปแล้ว");
+      }
+
+      const resolved = status === "resolved";
+      const title = resolved ? "รายงานของคุณได้รับการจัดการแล้ว" : "แอดมินไม่รับรายงานนี้";
+      const message = resolved
+        ? `แอดมินตรวจสอบรายงาน "${pendingReport.dormName}" และดำเนินการแล้ว\nหมายเหตุ: ${note}`
+        : `แอดมินตรวจสอบรายงาน "${pendingReport.dormName}" แล้ว แต่ไม่รับเรื่อง\nหมายเหตุ: ${note}`;
+      await connection.query(
+        `INSERT INTO user_notifications
+           (user_id, type, title, message, related_report_id)
+         VALUES (?, ?, ?, ?, ?)`,
+        [
+          pendingReport.reporterId,
+          resolved ? "dorm_report_resolved" : "dorm_report_dismissed",
+          title,
+          message,
+          id,
+        ]
+      );
+      await connection.query(
+        "INSERT INTO admin_audit_logs (admin_id, action, target_type, target_id, reason) VALUES (?, ?, ?, ?, ?)",
+        [req.user.id, `dorm_report_${status}`, "dorm", pendingReport.dormId, note]
+      );
+      const [[report]] = await connection.query(
+        `SELECT id, dorm_id AS dormId, status, admin_note AS adminNote, reviewed_at AS reviewedAt
+           FROM user_dorm_reports WHERE id = ?`,
+        [id]
+      );
+      await connection.commit();
+      res.json({ success: true, data: report });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   });
 
   // รายชื่อผู้เช่าและเจ้าของหอสำหรับหน้า Admin User Management

@@ -76,9 +76,9 @@ npm run chat:cli -- seller@test.com                 # แชทผ่าน term
 |---|---|
 | บัญชี | `POST /api/register` · `POST /api/login` · `GET /api/me` · `POST /api/owner/login` (เฉพาะ seller) |
 | ค้นหาหอ | `GET /api/dorms` · `GET /api/dorms/:id` · `GET /api/amenities` · `GET /api/tenant/dorms` · `GET /api/tenant/dorms/:id` |
-| ผู้เช่า (ต้อง login) | `POST /api/tenant/dorms/favorite` · `POST /api/tenant/visit-requests` · `POST /api/tenant/bookings` · `GET /api/tenant/bookings/my-bookings` · `PATCH /api/tenant/bookings/:id/cancel` |
+| ผู้เช่า (ต้อง login) | `POST /api/tenant/dorms/favorite` · `POST /api/tenant/visit-requests` · `POST /api/tenant/bookings` · `GET /api/tenant/bookings/my-bookings` · `PATCH /api/tenant/bookings/:id/cancel` · `GET /api/tenant/notifications` · `PATCH /api/tenant/notifications/read` |
 | เจ้าของหอ (ต้อง login เป็น seller) | `GET /api/owner/dashboard/stats` · `GET/POST /api/owner/dorms` · `PUT /api/owner/dorms/:id` · `PATCH /api/owner/dorms/:id/visibility` · `POST /api/owner/dorms/:dormId/rooms` · `PATCH /api/owner/rooms/:roomId/status` · `GET /api/owner/visit-requests` · `PATCH /api/owner/visit-requests/:id/status` · `GET /api/owner/bookings` · `PATCH /api/owner/bookings/:id/status` |
-| แอดมิน (ต้อง login เป็น admin) | `GET /api/admin/overview` · `GET /api/admin/sellers` · `PATCH /api/admin/users/:id/status` · `GET /api/admin/dorms?status=pending\|approved\|rejected\|all` · `PATCH /api/admin/dorms/:id/approval` |
+| แอดมิน (ต้อง login เป็น admin) | `GET /api/admin/overview` · `GET /api/admin/sellers` · `GET /api/admin/reports?status=pending\|resolved\|dismissed\|all` · `PATCH /api/admin/reports/:id` · `PATCH /api/admin/users/:id/status` · `GET /api/admin/dorms?status=pending\|approved\|rejected\|all` · `PATCH /api/admin/dorms/:id/approval` |
 | แชท (ต้อง login) | `POST/GET /api/conversations` · `GET /api/conversations/:id/messages` · Socket.IO |
 
 ## ขั้นตอนของระบบหอ (ทดสอบในแอปได้ครบ)
@@ -110,13 +110,14 @@ npm run chat:cli -- seller@test.com                 # แชทผ่าน term
 | เจ้าของหอ | `GET /api/booking/owner/reservations?status=approved` · `PATCH /api/booking/owner/reservations/:id` `{action: confirm/reject}` · `GET/PUT /api/booking/owner/dorms/:dormId/plans` |
 
 ## รายงานประกาศหอจากผู้เช่า
-ตาราง `user_dorm_reports` สร้างให้อัตโนมัติตอนเปิด `server.js` จาก `sql/user_dorm_reports.sql`
+ตาราง `user_dorm_reports` และ `user_notifications` สร้างให้อัตโนมัติตอนเปิด `server.js` จากไฟล์ SQL ที่เกี่ยวข้อง
 
 ผู้เช่าที่เข้าสู่ระบบส่งรายงานหอที่เปิดประกาศอยู่ได้ที่ `POST /api/tenant/dorms/:dormId/reports`
 โดยส่ง `{category, description}`; ผู้ใช้ส่งรายงานซ้ำหอเดิมขณะที่มีรายงานรอตรวจไม่ได้
 แอดมินดูรายการผ่าน `GET /api/admin/reports?status=pending|resolved|dismissed|all`
 และปิดรายการผ่าน `PATCH /api/admin/reports/:id` ด้วย `{status: resolved|dismissed, note}`
-คำสั่งปิดเรื่องต้องมีหมายเหตุ และบันทึกผู้ตรวจ/วันตรวจพร้อม audit log
+คำสั่งปิดเรื่องต้องมีหมายเหตุ และบันทึกผู้ตรวจ/วันตรวจพร้อม audit log และ notification
+ให้ผู้รายงานเดิม โดยผู้เช่าดูรายการได้ที่ `GET /api/tenant/notifications` และทำเครื่องหมายอ่านแล้วผ่าน `PATCH /api/tenant/notifications/read`
 
 ## ยังไม่มี
 - **รีวิว** และ **KYC** ในหน้าแอดมินยังเป็นข้อมูลตัวอย่าง (ฐานข้อมูลยังไม่มีตารางรีวิว / ยังไม่มี API อัปโหลดเอกสาร KYC)

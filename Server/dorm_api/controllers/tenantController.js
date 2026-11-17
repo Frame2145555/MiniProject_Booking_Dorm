@@ -219,6 +219,45 @@ exports.createDormReport = async (req, res) => {
   }
 };
 
+exports.getNotifications = async (req, res) => {
+  if (req.user?.role !== 'tenant') {
+    return res.status(403).json({ success: false, message: 'เฉพาะบัญชีผู้เช่าดูการแจ้งเตือนได้' });
+  }
+  try {
+    const [notifications] = await db.query(
+      `SELECT id, type, title, message, related_report_id AS relatedId,
+              is_read AS isRead, created_at AS createdAt
+         FROM user_notifications
+        WHERE user_id = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 100`,
+      [req.user.id]
+    );
+    res.json({ success: true, count: notifications.length, data: notifications });
+  } catch (error) {
+    console.error('Error in getNotifications:', error);
+    res.status(500).json({ success: false, message: 'ดึงการแจ้งเตือนไม่สำเร็จ' });
+  }
+};
+
+exports.markNotificationsRead = async (req, res) => {
+  if (req.user?.role !== 'tenant') {
+    return res.status(403).json({ success: false, message: 'เฉพาะบัญชีผู้เช่าแก้ไขการแจ้งเตือนได้' });
+  }
+  try {
+    const [result] = await db.query(
+      `UPDATE user_notifications
+          SET is_read = 1, read_at = COALESCE(read_at, NOW())
+        WHERE user_id = ? AND is_read = 0`,
+      [req.user.id]
+    );
+    res.json({ success: true, markedRead: result.affectedRows });
+  } catch (error) {
+    console.error('Error in markNotificationsRead:', error);
+    res.status(500).json({ success: false, message: 'อัปเดตการแจ้งเตือนไม่สำเร็จ' });
+  }
+};
+
 // 3. กดบันทึก / ยกเลิก รายการโปรด (Toggle Favorite)
 exports.toggleFavorite = async (req, res) => {
   try {

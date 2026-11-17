@@ -10,6 +10,8 @@ router.get('/dorms/:id', tenantController.getDormById);
 // จำเป็นต้องล็อกอิน (Required Authentication)
 router.use(requireAuth);
 
+router.get('/notifications', tenantController.getNotifications);
+router.patch('/notifications/read', tenantController.markNotificationsRead);
 router.post('/dorms/favorite', tenantController.toggleFavorite);
 router.post('/dorms/:dormId/reports', tenantController.createDormReport);
 router.post('/visit-requests', tenantController.createVisitRequest);

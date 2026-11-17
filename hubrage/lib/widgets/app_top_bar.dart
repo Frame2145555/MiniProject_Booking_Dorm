@@ -139,34 +139,69 @@ class _Brand extends StatelessWidget {
   }
 }
 
-/// แผงการแจ้งเตือน (ข้อมูลตัวอย่างสำหรับต้นแบบ)
-void showNotificationsSheet(BuildContext context) {
-  const items = [
+/// แสดงการแจ้งเตือนจริงเมื่อส่งข้อมูลจาก server หรือข้อมูลตัวอย่างในโหมด guest
+Future<void> showNotificationsSheet(
+  BuildContext context, {
+  List<Map<String, dynamic>>? notifications,
+}) {
+  const demoItems =
+      <({
+        IconData icon,
+        Color color,
+        Color background,
+        String title,
+        String message,
+        bool isRead,
+      })>[
     (
-      Icons.celebration_rounded,
-      AppColors.accent,
-      AppColors.accentSoft,
-      'ยินดีต้อนรับสู่ Dorm Master',
-      'เริ่มค้นหาและบันทึกหอพักที่ถูกใจได้เลย',
+      icon: Icons.celebration_rounded,
+      color: AppColors.accent,
+      background: AppColors.accentSoft,
+      title: 'ยินดีต้อนรับสู่ Dorm Master',
+      message: 'เริ่มค้นหาและบันทึกหอพักที่ถูกใจได้เลย',
+      isRead: false,
     ),
     (
-      Icons.forum_rounded,
-      AppColors.info,
-      AppColors.infoSoft,
-      'มีข้อความใหม่ในแชท',
-      'เจ้าของหอตอบคำถามเรื่องห้องว่างของคุณแล้ว',
+      icon: Icons.forum_rounded,
+      color: AppColors.info,
+      background: AppColors.infoSoft,
+      title: 'มีข้อความใหม่ในแชท',
+      message: 'เจ้าของหอตอบคำถามเรื่องห้องว่างของคุณแล้ว',
+      isRead: false,
     ),
     (
-      Icons.favorite_rounded,
-      AppColors.danger,
-      AppColors.dangerSoft,
-      'หอที่คุณบันทึกไว้อัปเดตข้อมูล',
-      'ตรวจสอบราคาและห้องว่างล่าสุดได้ที่หน้ารายการโปรด',
+      icon: Icons.favorite_rounded,
+      color: AppColors.danger,
+      background: AppColors.dangerSoft,
+      title: 'หอที่คุณบันทึกไว้อัปเดตข้อมูล',
+      message: 'ตรวจสอบราคาและห้องว่างล่าสุดได้ที่หน้ารายการโปรด',
+      isRead: false,
     ),
   ];
 
-  showModalBottomSheet<void>(
+  final items = notifications == null
+      ? demoItems
+      : notifications.map((notification) {
+        final type = notification['type']?.toString();
+        final resolved = type == 'dorm_report_resolved';
+        final dismissed = type == 'dorm_report_dismissed';
+        return (
+          icon: resolved
+              ? Icons.task_alt_rounded
+              : dismissed
+              ? Icons.info_outline_rounded
+              : Icons.notifications_rounded,
+          color: dismissed ? AppColors.warning : AppColors.info,
+          background: dismissed ? AppColors.warningSoft : AppColors.infoSoft,
+          title: notification['title']?.toString() ?? 'การแจ้งเตือน',
+          message: notification['message']?.toString() ?? '',
+          isRead: notification['isRead'] == true,
+        );
+      }).toList();
+
+  return showModalBottomSheet<void>(
     context: context,
+    isScrollControlled: true,
     showDragHandle: true,
     builder: (ctx) => SafeArea(
       child: Padding(
@@ -180,49 +215,86 @@ void showNotificationsSheet(BuildContext context) {
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 14),
-            ...items.map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: item.$3,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Icon(item.$1, color: item.$2, size: 22),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.$4,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                            ),
+            if (items.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 28),
+                child: Center(
+                  child: Text(
+                    'ยังไม่มีการแจ้งเตือน',
+                    style: TextStyle(color: AppColors.muted),
+                  ),
+                ),
+              )
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(ctx).size.height * 0.65,
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: items.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: item.background,
+                            borderRadius: BorderRadius.circular(14),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            item.$5,
-                            style: const TextStyle(
-                              color: AppColors.muted,
-                              fontSize: 12,
-                              height: 1.4,
-                            ),
+                          child: Icon(
+                            item.icon,
+                            color: item.color,
+                            size: 22,
                           ),
-                        ],
-                      ),
-                    ),
-                  ],
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      item.title,
+                                      style: TextStyle(
+                                        fontWeight: item.isRead
+                                            ? FontWeight.w600
+                                            : FontWeight.w800,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  if (!item.isRead)
+                                    const Icon(
+                                      Icons.circle,
+                                      color: AppColors.info,
+                                      size: 8,
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                item.message,
+                                style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
-            ),
           ],
         ),
       ),

@@ -754,45 +754,10 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
     Map<String, dynamic> report,
     String status,
   ) async {
-    final noteController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
     final note = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(status == 'resolved' ? 'ปิดรายงาน' : 'ไม่รับรายงาน'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: noteController,
-            minLines: 2,
-            maxLines: 4,
-            maxLength: 500,
-            validator: (value) => value == null || value.trim().isEmpty
-                ? 'กรุณาระบุหมายเหตุการตรวจสอบ'
-                : null,
-            decoration: const InputDecoration(
-              labelText: 'หมายเหตุการตรวจสอบ',
-              hintText: 'ระบุผลการตรวจสอบ',
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('ยกเลิก'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.pop(dialogContext, noteController.text.trim());
-              }
-            },
-            child: const Text('บันทึก'),
-          ),
-        ],
-      ),
+      builder: (_) => _DormReportReviewDialog(status: status),
     );
-    noteController.dispose();
     final id = int.tryParse('${report['id']}');
     if (note == null || id == null) return;
 
@@ -1482,5 +1447,61 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
         ),
       ],
     ),
+  );
+}
+
+class _DormReportReviewDialog extends StatefulWidget {
+  final String status;
+
+  const _DormReportReviewDialog({required this.status});
+
+  @override
+  State<_DormReportReviewDialog> createState() =>
+      _DormReportReviewDialogState();
+}
+
+class _DormReportReviewDialogState extends State<_DormReportReviewDialog> {
+  final _noteController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.status == 'resolved' ? 'ปิดรายงาน' : 'ไม่รับรายงาน'),
+    content: Form(
+      key: _formKey,
+      child: TextFormField(
+        controller: _noteController,
+        minLines: 2,
+        maxLines: 4,
+        maxLength: 500,
+        validator: (value) => value == null || value.trim().isEmpty
+            ? 'กรุณาระบุหมายเหตุการตรวจสอบ'
+            : null,
+        decoration: const InputDecoration(
+          labelText: 'หมายเหตุการตรวจสอบ',
+          hintText: 'ระบุผลการตรวจสอบ',
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('ยกเลิก'),
+      ),
+      ElevatedButton(
+        onPressed: () {
+          if (_formKey.currentState!.validate()) {
+            Navigator.pop(context, _noteController.text.trim());
+          }
+        },
+        child: const Text('บันทึก'),
+      ),
+    ],
   );
 }
