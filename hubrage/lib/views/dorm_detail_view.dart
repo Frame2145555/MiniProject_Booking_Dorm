@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -576,10 +578,21 @@ class _DormDetailViewState extends State<DormDetailView> {
               fit: StackFit.expand,
               children: [
                 if (_galleryImages.isNotEmpty)
-                  PageView.builder(
-                    itemCount: _galleryImages.length,
-                    onPageChanged: (i) => setState(() => _heroPage = i),
-                    itemBuilder: (_, i) => DormGalleryImage(_galleryImages[i]),
+                  // ให้เลื่อนรูปด้วยเมาส์/ทัชแพดได้ด้วย (บนเว็บ / เดสก์ท็อป)
+                  ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(context).copyWith(
+                      dragDevices: {
+                        PointerDeviceKind.touch,
+                        PointerDeviceKind.mouse,
+                        PointerDeviceKind.trackpad,
+                      },
+                    ),
+                    child: PageView.builder(
+                      itemCount: _galleryImages.length,
+                      onPageChanged: (i) => setState(() => _heroPage = i),
+                      itemBuilder: (_, i) =>
+                          DormGalleryImage(_galleryImages[i]),
+                    ),
                   )
                 else
                   Center(

@@ -82,6 +82,7 @@ exports.getDorms = async (req, res) => {
       );
     }
 
+    try { await require('../routes/dormImagesRoutes').attach(db, results); } catch (e) { console.error('dorm images:', e.message); } // รูปเพิ่มเติม (ถ้าพลาดไม่ให้หน้าหลักพัง)
     res.json({ success: true, count: results.length, data: results });
   } catch (err) {
     console.error('Error in getDorms:', err);
@@ -162,6 +163,7 @@ exports.getDormById = async (req, res) => {
       water: '18 บาท / หน่วย (ขั้นต่ำ 100 บาท)'
     };
 
+    try { await require('../routes/dormImagesRoutes').attach(db, dorm); } catch (e) { console.error('dorm images:', e.message); } // รูปเพิ่มเติม (ถ้าพลาดไม่ให้หน้าหลักพัง)
     res.json({ success: true, data: dorm });
   } catch (err) {
     console.error('Error in getDormById:', err);

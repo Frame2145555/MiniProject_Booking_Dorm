@@ -1,5 +1,7 @@
 "use strict";
 
+const { notify } = require("../routes/notificationRoutes");
+
 const DORM_STATUSES = ["pending", "approved", "rejected"];
 const KYC_STATUSES = ["pending", "approved", "rejected"];
 
@@ -36,7 +38,11 @@ module.exports = (db, paymentHelpers = {}) => {
           (SELECT COUNT(*) FROM dorms WHERE approval_status = 'pending') AS pending_dorms,
           (SELECT COUNT(*) FROM dorms WHERE approval_status = 'approved') AS approved_dorms,
           (SELECT COUNT(*) FROM dorm_view_events) AS total_views,
-          (SELECT COUNT(*) FROM bookings) AS bookings`);
+          (SELECT COUNT(*) FROM bookings) AS bookings,
+          (SELECT COUNT(*) FROM booking_payments WHERE status = 'paid') AS pending_payments,
+          (SELECT COUNT(*) FROM user_dorm_reports WHERE status = 'pending') AS pending_reports,
+          (SELECT COUNT(*) FROM dorm_reviews WHERE status = 'visible') AS visible_reviews,
+          (SELECT COUNT(*) FROM dorm_reviews) AS total_reviews`);
       res.json({ success: true, data: row });
     },
 
@@ -101,12 +107,14 @@ module.exports = (db, paymentHelpers = {}) => {
           [ids]
         );
         const [docs] = await db.query(
-          `SELECT dorm_id, document_type AS type, display_name AS name FROM dorm_documents WHERE dorm_id IN (?)`,
+          `SELECT id, dorm_id, document_type AS type, display_name AS name, mime_type AS mimeType,
+                ${require("../routes/dormDocumentRoutes").HAS_FILE_SQL} AS hasFile
+           FROM dorm_documents WHERE dorm_id IN (?)`,
           [ids]
         );
         for (const dorm of dorms) {
           dorm.amenities = amenities.filter((item) => item.dorm_id === dorm.id).map((item) => item.name);
-          dorm.documents = docs.filter((item) => item.dorm_id === dorm.id).map(({ type, name }) => ({ type, name }));
+          dorm.documents = docs.filter((item) => item.dorm_id === dorm.id).map(({ id, type, name, mimeType, hasFile }) => ({ id, type, name, mimeType, hasFile: !!hasFile }));
         }
       }
       res.json({ success: true, count: dorms.length, data: dorms });
@@ -260,6 +268,13 @@ module.exports = (db, paymentHelpers = {}) => {
             `เข้าพัก ${reservation.startsAt} ถึง ${reservation.endsAt}\n` +
             `ชำระเงิน ${money(reservation.paidAmount)} บาทแล้ว แอดมินตรวจสอบยอดเงินถูกต้อง\n` +
             "รอเจ้าของหอยืนยันการจอง",
+        });
+        // แจ้งเตือนที่กระดิ่งของเจ้าของหอ (เก็บในตาราง user_notifications)
+        await notify(db, {
+          userId: reservation.ownerId, type: "deposit_approved",
+          title: "แอดมินตรวจสอบค่ามัดจำแล้ว",
+          body: `${reservation.tenantName} จองห้อง ${reservation.roomNumber} (${reservation.planLabel}) ` +
+            `ค่ามัดจำ ${money(reservation.paidAmount)} บาท แอดมินตรวจสอบยอดเงินถูกต้อง รอคุณยืนยันการจอง`,
         });
       }
       res.json({ success: true, data: reservation });

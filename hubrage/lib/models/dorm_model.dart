@@ -25,6 +25,7 @@ class RoomDetailModel {
   final String roomNumber;
   final String roomType;
   final double price;
+  final int floor; // ชั้นของห้อง (ค่าเริ่มต้น 1)
   final String status; // 'ว่าง', 'มีผู้เช่า', 'ปรับปรุง'
 
   RoomDetailModel({
@@ -32,6 +33,7 @@ class RoomDetailModel {
     required this.roomNumber,
     required this.roomType,
     required this.price,
+    this.floor = 1,
     required this.status,
   });
 }

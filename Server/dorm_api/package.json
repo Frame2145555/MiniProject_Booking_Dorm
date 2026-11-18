@@ -9,6 +9,7 @@
     "test:chat": "node test/integration/chat_smoke.js",
     "test:booking": "node test/integration/booking_smoke.js",
     "test:payment": "node test/integration/payment_smoke.js",
+    "test:notifications": "node test/integration/notifications_smoke.js",
     "setup:booking": "node scripts/setup_booking_payment.js",
     "seed:dorms": "node scripts/seed_dorms.js",
     "seed:passwords": "node scripts/seed_passwords.js",

@@ -106,12 +106,15 @@ exports.getOwnerDorms = async (req, res) => {
           room_number AS roomNumber,
           room_type AS roomType,
           price_per_month AS price,
+          floor,
           status
-         FROM rooms WHERE dorm_id = ? ORDER BY room_number ASC`,
+         FROM rooms WHERE dorm_id = ? ORDER BY floor ASC, room_number ASC`,
         [dorm.id]
       );
       dorm.roomsList = rooms;
     }
+
+    try { await require('../routes/dormImagesRoutes').attach(db, dorms); } catch (e) { console.error('dorm images:', e.message); } // รูปเพิ่มเติม (ถ้าพลาดไม่ให้หน้าหลักพัง)
 
     res.json({ success: true, count: dorms.length, data: dorms });
   } catch (err) {
@@ -123,6 +126,8 @@ exports.getOwnerDorms = async (req, res) => {
 // 3. เพิ่มประกาศหอพักใหม่พร้อมเอกสารแนบ
 exports.createDorm = async (req, res) => {
   const connection = await db.getConnection();
+  const { saveDocumentFile, removeDocumentFiles } = require('../routes/dormDocumentRoutes');
+  const savedFiles = []; // ไฟล์เอกสารที่เขียนลงดิสก์แล้ว (ลบทิ้งถ้าบันทึกหอไม่สำเร็จ)
   try {
     const {
       title,
@@ -140,6 +145,15 @@ exports.createDorm = async (req, res) => {
 
     if (!title || !location || !phone || !priceMin || !priceMax) {
       return res.status(400).json({ success: false, message: 'กรุณากรอกข้อมูลสำคัญให้ครบถ้วน' });
+    }
+
+    // ไฟล์เอกสารแนบ (data URL) -> ตรวจก่อนเริ่มบันทึก เพื่อให้แอดมินเปิดดูได้ (routes/dormDocumentRoutes.js)
+    const { validateDocumentFile } = require('../routes/dormDocumentRoutes');
+    const checkedDocuments = [];
+    for (const doc of Array.isArray(documents) ? documents : []) {
+      const file = validateDocumentFile(doc);
+      if (file.error) return res.status(400).json({ success: false, message: file.error });
+      checkedDocuments.push({ ...doc, ...file });
     }
 
     await connection.beginTransaction();
@@ -166,11 +180,17 @@ exports.createDorm = async (req, res) => {
       }
     }
 
-    for (let doc of documents) {
+    for (let doc of checkedDocuments) {
+      // ตัวไฟล์ลงดิสก์ (storage/dorm_documents/<dormId>/) ฐานข้อมูลเก็บแค่ที่อยู่ไฟล์
+      let storageKey = doc.key || 'path/to/storage';
+      if (doc.buffer) {
+        storageKey = await saveDocumentFile(dormId, doc.buffer, doc.mimeType);
+        savedFiles.push(storageKey);
+      }
       await connection.query(
-        `INSERT INTO dorm_documents (dorm_id, document_type, display_name, private_storage_key)
-         VALUES (?, ?, ?, ?)`,
-        [dormId, doc.type || 'proof_of_right', doc.name || 'document', doc.key || 'path/to/storage']
+        `INSERT INTO dorm_documents (dorm_id, document_type, display_name, private_storage_key, mime_type)
+         VALUES (?, ?, ?, ?, ?)`,
+        [dormId, doc.type || 'proof_of_right', doc.name || 'document', storageKey, doc.mimeType]
       );
     }
 
@@ -182,9 +202,11 @@ exports.createDorm = async (req, res) => {
       data: { dormId, approvalStatus: 'pending' }
     });
   } catch (err) {
-    await connection.rollback();
+    // log error ตัวจริงก่อน แล้วค่อย rollback -- ถ้าการเชื่อมต่อหลุดไปแล้ว rollback จะพังซ้อน ไม่ให้มันบัง error เดิม
     console.error('Error in createDorm:', err);
-    res.status(500).json({ success: false, message: 'Failed to create dormitory' });
+    await connection.rollback().catch((rollbackErr) => console.error('createDorm rollback failed:', rollbackErr.message));
+    await removeDocumentFiles(savedFiles);
+    res.status(500).json({ success: false, message: 'บันทึกหอพักไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' });
   } finally {
     connection.release();
   }

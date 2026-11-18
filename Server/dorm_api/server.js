@@ -32,6 +32,12 @@ app.use("/api", auth.router);                                  // POST /api/regi
 app.use("/api", require("./searchandsort")(db));               // GET /api/dorms, /api/dorms/:id, /api/amenities
 app.use("/api", require("./routes/chatRoutes")(pool, auth.verifyToken)); // /api/conversations ... (แชท)
 app.use("/api/owner", require("./routes/ownerBookingRoutes")(db, auth)); // จอง/นัด ฝั่งเจ้าของหอ (ส่วนเสริม ต้องมาก่อนของพี่)
+app.use("/api/owner", require("./routes/ownerRoomRoutes")(db, auth));    // แก้ไข/ลบห้อง (ส่วนเสริม ต้องมาก่อนของพี่)
+app.use("/api/owner", require("./routes/ownerRevenueRoutes")(db, auth)); // รายได้ของเจ้าของหอ
+app.use("/uploads/dorms", express.static(path.join(__dirname, "uploads", "dorms"))); // ไฟล์รูปหอที่อัปโหลด
+const dormImages = require("./routes/dormImagesRoutes");
+app.use("/api/owner", dormImages(db, auth));                         // อัปโหลด/บันทึกรูปเพิ่มเติมของหอ
+app.use("/api/notifications", require("./routes/notificationRoutes")(db, auth)); // กระดิ่งแจ้งเตือน (ทุกบทบาท)
 app.use("/api/owner", require("./routes/ownerRoutes"));       // ระบบเจ้าของหอ (ของพี่): /api/owner/...
 // หน้า list/รายละเอียดหอเปิดดูได้โดยไม่ login แต่ถ้าแนบ token มา ให้รู้ว่าใครดู (isFavorite / ยอดวิว)
 const jwt = require("jsonwebtoken");
@@ -47,6 +53,9 @@ const optionalUser = (req, res, next) => {
 };
 app.use("/api/tenant", optionalUser, require("./routes/tenantRoutes")); // ระบบค้นหา/จอง (ของพี่): /api/tenant/...
 const adminRoutes = require("./routes/adminRoutes");
+const dormDocuments = require("./routes/dormDocumentRoutes")(db, auth, appCfg.jwt_secret);
+app.use("/api/admin/dorm-documents", dormDocuments.adminRouter);   // แอดมินเปิดดูเอกสารแนบของคำขอลงประกาศหอ
+app.use("/api/files", dormDocuments.fileRouter);                    // ลิงก์ชั่วคราวเปิดไฟล์ในเบราว์เซอร์
 app.use("/api/admin", adminRoutes(db, auth));                        // ระบบแอดมิน: อนุมัติหอ / ระงับบัญชี / ตรวจรายงาน
 // ระบบจองห้องแบบจ่ายเงินผ่านแอดมิน + ผัง 2D + แจ้งเตือนในแชท (ไฟล์แยก)
 const bookingPayment = require("./routes/bookingPaymentRoutes");
@@ -132,10 +141,12 @@ Promise.all([
   bookingPayment.ensureSchema(pool),
   ensureReportSchema().then(ensureNotificationSchema).then(ensureDormReviewSchema),
   ensureKycSchema(),
+  dormImages.ensureSchema(pool),
+  require("./routes/dormDocumentRoutes").ensureSchema(pool),
 ])
   .catch((err) => console.error("สร้างตารางระบบไม่สำเร็จ:", err.message))
   .finally(() => httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log("แชท real time (Socket.IO) พร้อมใช้งาน"); // ไม่เห็นบรรทัดนี้ = รัน server.js ตัวเก่าอยู่
-  console.log("ระบบจองห้อง + ชำระเงิน + รายงาน พร้อมใช้งาน");
+  console.log("ระบบจองห้อง + ชำระเงิน + รายงาน + รีวิว + รายได้เจ้าของหอ พร้อมใช้งาน");
 }));

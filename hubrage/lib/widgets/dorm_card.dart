@@ -4,6 +4,7 @@ import '../models/admin_console_state.dart';
 import '../models/favorites_state.dart';
 import '../theme/app_theme.dart';
 import '../views/dorm_detail_view.dart';
+import 'dorm_gallery.dart';
 
 /// เปิดหน้ารายละเอียดหอพัก (บันทึกยอดเข้าชม + ซิงก์หัวใจกับ FavoritesState)
 void openDormDetail(
@@ -66,7 +67,7 @@ class DormCard extends StatelessWidget {
     );
     final Widget cover = imageUrl.isNotEmpty
         ? Image.network(
-            imageUrl,
+            resolveImageUrl(imageUrl),
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) => placeholder,
           )

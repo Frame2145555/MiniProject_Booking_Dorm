@@ -12,6 +12,12 @@ const chatTestRoomId = 10;
 Widget chatTestApp(Widget page) =>
     MaterialApp(theme: AppTheme.light(), home: page);
 
+/// ข้อความแจ้งเตือนจากระบบ (เช่น แอดมินอนุมัติค่ามัดจำ) -> แสดงเป็นกล่องกลางจอ
+Map<String, dynamic> chatTestSystemMessage(int id, String text) => {
+  ...chatTestMessage(id, chatTestOtherUser, '[แจ้งเตือนจากระบบ] $text'),
+  'type': 'system',
+};
+
 Map<String, dynamic> chatTestMessage(int id, int senderId, String text) => {
   'id': id,
   'conversation_id': chatTestRoomId,
@@ -24,10 +30,12 @@ Map<String, dynamic> chatTestMessage(int id, int senderId, String text) => {
 Map<String, dynamic> chatTestConversation({
   String lastMessage = 'ว่างครับ',
   int unread = 0,
+  String otherName = 'เจ้าของหอทดสอบ', // ฝั่งเจ้าของหอส่ง 'ผู้เช่าทดสอบ' แทน
+  String dormName = 'หอรวย เธะ',
 }) => {
   'id': chatTestRoomId,
-  'other_name': 'เจ้าของหอทดสอบ',
-  'dorm_name': 'หอรวย เธะ',
+  'other_name': otherName,
+  'dorm_name': dormName,
   'last_message': lastMessage,
   'unread': unread,
 };

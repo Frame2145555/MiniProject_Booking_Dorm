@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../services/owner_api_service.dart';
+import '../services/session.dart';
 import '../theme/app_theme.dart';
 
 class OwnerKycView extends StatefulWidget {
@@ -11,7 +12,9 @@ class OwnerKycView extends StatefulWidget {
 }
 
 class _OwnerKycViewState extends State<OwnerKycView> {
-  final fullName = TextEditingController();
+  // แยกชื่อ / นามสกุล ให้ตรงกับหน้าสมัครสมาชิก (ตอนส่งจะต่อกันเป็น full_name แบบเดียวกับตอนสมัคร)
+  final firstName = TextEditingController();
+  final lastName = TextEditingController();
   final phone = TextEditingController();
   final email = TextEditingController();
   final idCard = TextEditingController();
@@ -19,8 +22,22 @@ class _OwnerKycViewState extends State<OwnerKycView> {
   bool saving = false;
 
   @override
+  void initState() {
+    super.initState();
+    // เติมข้อมูลที่สมัครไว้ให้ก่อน: full_name = "ชื่อจริง นามสกุล" (คำแรก = ชื่อ, ที่เหลือ = นามสกุล)
+    final parts = Session.fullName.trim().split(RegExp(r'\s+'));
+    if (parts.first.isNotEmpty) {
+      firstName.text = parts.first;
+      lastName.text = parts.skip(1).join(' ');
+    }
+    phone.text = Session.phone;
+    email.text = Session.email;
+  }
+
+  @override
   void dispose() {
-    fullName.dispose();
+    firstName.dispose();
+    lastName.dispose();
     phone.dispose();
     email.dispose();
     idCard.dispose();
@@ -37,20 +54,38 @@ class _OwnerKycViewState extends State<OwnerKycView> {
     setState(() => selfie ? selfieImage = file : idImage = file);
   }
 
+  /// ตรวจทีละช่องก่อนส่ง (กฎเดียวกับ POST /api/owner/kyc) -> คืนข้อความผิดพลาด หรือ null ถ้าผ่าน
+  String? _validate() {
+    final phoneDigits = phone.text.replaceAll(RegExp(r'[-\s()]'), '');
+    final idDigits = idCard.text.replaceAll(RegExp(r'[- ]'), '');
+    if (firstName.text.trim().isEmpty || lastName.text.trim().isEmpty) {
+      return 'กรุณากรอกชื่อจริงและนามสกุล';
+    }
+    if (!RegExp(r'^0\d{8,9}$').hasMatch(phoneDigits)) {
+      return 'เบอร์โทรศัพท์ต้องขึ้นต้นด้วย 0 และมี 9-10 หลัก เช่น 0812345678';
+    }
+    if (!RegExp(r'^\S+@\S+\.\S+$').hasMatch(email.text.trim())) {
+      return 'รูปแบบอีเมลไม่ถูกต้อง';
+    }
+    if (!RegExp(r'^\d{13}$').hasMatch(idDigits)) {
+      return 'เลขประจำตัวประชาชนต้องเป็นตัวเลข 13 หลัก';
+    }
+    if (idImage == null) return 'กรุณาอัปโหลดรูปถ่ายบัตรประชาชน';
+    return null;
+  }
+
   Future<void> submit() async {
-    if (idCard.text.replaceAll(RegExp(r'[- ]'), '').length != 13 ||
-        idImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('กรุณากรอกเลขบัตร 13 หลักและอัปโหลดรูปบัตร'),
-        ),
-      );
+    final error = _validate();
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error)));
       return;
     }
     setState(() => saving = true);
     try {
       await OwnerApiService.submitKyc(
-        fullName: fullName.text,
+        fullName: '${firstName.text.trim()} ${lastName.text.trim()}',
         phone: phone.text,
         email: email.text,
         idCardNumber: idCard.text,
@@ -85,15 +120,34 @@ class _OwnerKycViewState extends State<OwnerKycView> {
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 16),
-        TextField(
-          controller: fullName,
-          decoration: const InputDecoration(labelText: 'ชื่อ-นามสกุล *'),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: firstName,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'ชื่อจริง *'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                controller: lastName,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'นามสกุล *'),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         TextField(
           controller: phone,
           keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'เบอร์โทรศัพท์ *'),
+          decoration: const InputDecoration(
+            labelText: 'เบอร์โทรศัพท์ *',
+            hintText: 'เช่น 0812345678',
+          ),
         ),
         const SizedBox(height: 12),
         TextField(

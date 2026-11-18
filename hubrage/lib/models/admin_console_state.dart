@@ -22,6 +22,10 @@ class AdminConsoleState extends ChangeNotifier {
   late final Map<String, int> _mockViews;
   late final List<Map<String, dynamic>> _mockReviews;
 
+  /// ตัวเลขจาก GET /api/admin/overview (ว่าง = ยังไม่ได้โหลด ใช้ค่าจากข้อมูลตัวอย่างแทน)
+  Map<String, dynamic> overview = {};
+  bool overviewLoaded = false;
+
   /// true = ข้อมูลในหน้าแอดมินมาจาก server แล้ว
   bool serverMode = false;
   bool loadingServer = false;
@@ -152,6 +156,8 @@ class AdminConsoleState extends ChangeNotifier {
       dormViews
         ..clear()
         ..addAll(_mockViews);
+      overview.clear();
+      overviewLoaded = false;
       notifyListeners();
     }
   }
@@ -186,12 +192,38 @@ class AdminConsoleState extends ChangeNotifier {
             '${d['id']}': int.tryParse('${d['views']}') ?? 0,
         });
       serverMode = true;
+      // Overview โหลดแยก: ถ้าพลาดไม่ทำให้ส่วนอื่นของหน้าแอดมินใช้ไม่ได้
+      await _loadOverview();
     } on AdminApiException catch (e) {
       serverError = e.message;
     } finally {
       loadingServer = false;
       notifyListeners();
     }
+  }
+
+  Future<void> _loadOverview() async {
+    try {
+      overview = await AdminApiService.getOverview();
+      overviewLoaded = overview.isNotEmpty;
+    } catch (e) {
+      debugPrint('โหลด Overview ไม่สำเร็จ: $e');
+    }
+  }
+
+  /// เรียกเป็นระยะจากหน้าแอดมิน: อัปเดตตัวเลข Overview + รีวิว โดยไม่โหลดทั้งหน้าใหม่
+  Future<void> refreshLive() async {
+    if (!AdminApiService.isAdmin || !serverMode || loadingServer) return;
+    await _loadOverview();
+    try {
+      final rows = await AdminApiService.getReviews();
+      reviews
+        ..clear()
+        ..addAll(rows.map(_reviewFromApi));
+    } catch (e) {
+      debugPrint('โหลดรีวิวไม่สำเร็จ: $e');
+    }
+    notifyListeners();
   }
 
   Future<String?> reviewReport(
@@ -338,7 +370,21 @@ class AdminConsoleState extends ChangeNotifier {
     super.dispose();
   }
 
-  int get totalViews => dormViews.values.fold(0, (sum, value) => sum + value);
+  int get totalViews => overviewLoaded
+      ? _int(overview['total_views'])
+      : dormViews.values.fold(0, (sum, value) => sum + value);
+  int get totalTenants => overviewLoaded ? _int(overview['tenants']) : 0;
+  int get suspendedUsers => overviewLoaded
+      ? _int(overview['suspended'])
+      : sellers.where((s) => s['status'] == 'suspended').length;
+  int get pendingPayments =>
+      overviewLoaded ? _int(overview['pending_payments']) : 0;
+  int get totalBookings => overviewLoaded ? _int(overview['bookings']) : 0;
+  int get totalReviews =>
+      overviewLoaded ? _int(overview['total_reviews']) : reviews.length;
+  int get pendingReportCount => serverMode
+      ? reports.where((r) => r['status'] == 'pending').length
+      : 0;
   int get pendingDormCount =>
       dormRequests.where((request) => request['status'] == 'pending').length;
 
