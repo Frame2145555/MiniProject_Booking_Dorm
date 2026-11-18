@@ -9,7 +9,7 @@ import 'dorm_catalog.dart';
 /// Shared state ของหน้าแอดมิน
 /// - login ด้วยบัญชี admin -> โหลดเจ้าของหอ / คำขอลงประกาศหอ จาก server (/api/admin)
 ///   และปุ่มอนุมัติหอ / ระงับบัญชี จะบันทึกลง MySQL จริง ([serverMode] = true)
-/// - ยังไม่ได้ login เป็น admin -> ใช้ข้อมูลตัวอย่างในไฟล์นี้เหมือนเดิม
+/// - ข้อมูลตัวอย่างมีไว้สำหรับ preview เท่านั้น; เมื่อ logout จะล้างข้อมูล Admin ออกจาก state
 /// Overview, Owner, User, Payment, Report และ Review ใช้ข้อมูลจาก Backend/MySQL เมื่อ Admin login
 class AdminConsoleState extends ChangeNotifier {
   AdminConsoleState() {
@@ -166,23 +166,18 @@ class AdminConsoleState extends ChangeNotifier {
       _startReportPolling();
     } else {
       _stopReportPolling();
-      if (serverMode || serverError != null) {
-      // ออกจากบัญชีแอดมิน -> กลับไปใช้ข้อมูลตัวอย่าง
+      // เมื่อออกจาก Admin ให้ล้างข้อมูลจาก Server เพื่อไม่ให้ข้อมูลจริงปะปน
+      // กับ Mock Data หรือค้างอยู่หลังเปลี่ยนบัญชี
       serverMode = false;
       serverError = null;
-      sellers
-        ..clear()
-        ..addAll(_mockSellers.map((s) => Map<String, dynamic>.from(s)));
+      sellers.clear();
       dormRequests.clear();
       reports.clear();
       overview.clear();
       overviewLoaded = false;
-      reviews..clear()..addAll(_mockReviews.map((r) => Map<String, dynamic>.from(r)));
-      dormViews
-        ..clear()
-        ..addAll(_mockViews);
+      reviews.clear();
+      dormViews.clear();
       notifyListeners();
-      }
     }
   }
 
@@ -222,7 +217,16 @@ class AdminConsoleState extends ChangeNotifier {
         reviews..clear()..addAll(reviewRows.map(_reviewFromApi));
       } on AdminApiException catch (e) { serverError = 'โหลดรีวิวไม่สำเร็จ: ${e.message}'; }
     } on AdminApiException catch (e) {
+      serverMode = false;
       serverError = e.message;
+      // ไม่ปล่อยข้อมูลตัวอย่างให้ดูเหมือนข้อมูลจริง เมื่อโหลด Backend ไม่สำเร็จ
+      sellers.clear();
+      dormRequests.clear();
+      reports.clear();
+      reviews.clear();
+      dormViews.clear();
+      overview.clear();
+      overviewLoaded = false;
     } finally {
       loadingServer = false;
       notifyListeners();
