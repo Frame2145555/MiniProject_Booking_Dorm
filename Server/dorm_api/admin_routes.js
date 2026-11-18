@@ -38,7 +38,7 @@ module.exports = (db, auth) => {
         (SELECT COUNT(*) FROM dorms WHERE approval_status = 'approved')       AS approved_dorms,
         (SELECT COUNT(*) FROM dorm_view_events)                               AS total_views,
         (SELECT COUNT(*) FROM bookings)                                       AS bookings,
-        (SELECT COUNT(*) FROM booking_payments WHERE status = 'paid')       AS pending_payments,
+        (SELECT COUNT(*) FROM booking_payments WHERE status = 'paid')              AS pending_payments,
         (SELECT COUNT(*) FROM dorm_reports WHERE status = 'pending')         AS pending_reports,
         (SELECT COUNT(*) FROM dorm_reviews WHERE status = 'visible')         AS visible_reviews,
         (SELECT COUNT(*) FROM dorm_reviews)                                  AS total_reviews`);
@@ -81,6 +81,21 @@ module.exports = (db, auth) => {
         WHERE role IN ('tenant', 'seller') ${role === "all" ? "" : "AND role = ?"}
         ORDER BY created_at DESC, id DESC`,
       role === "all" ? [] : [role]
+    );
+    res.json({ success: true, count: rows.length, data: rows });
+  });
+
+  // ประวัติการกระทำของ Admin (ต้องสร้างตารางด้วย ensureSchema ด้านล่าง)
+  router.get("/audit-logs", async (req, res) => {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const [rows] = await db.query(
+      `SELECT l.id, l.admin_id AS adminId, u.full_name AS adminName,
+              l.action, l.target_type AS targetType, l.target_id AS targetId,
+              l.reason, l.created_at AS createdAt
+         FROM admin_audit_logs l
+         LEFT JOIN users u ON u.id = l.admin_id
+        ORDER BY l.created_at DESC, l.id DESC LIMIT ?`,
+      [limit]
     );
     res.json({ success: true, count: rows.length, data: rows });
   });
@@ -159,4 +174,21 @@ module.exports = (db, auth) => {
   });
 
   return router;
+};
+
+// เรียกจาก server.js ก่อน listen เพื่อให้ audit() ไม่ล้มเมื่อยังไม่มีตาราง
+module.exports.ensureSchema = async (db) => {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS admin_audit_logs (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      admin_id BIGINT UNSIGNED NOT NULL,
+      action VARCHAR(80) NOT NULL,
+      target_type VARCHAR(40) NOT NULL,
+      target_id BIGINT UNSIGNED NULL,
+      reason VARCHAR(1000) NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_admin_audit_created (created_at),
+      INDEX idx_admin_audit_target (target_type, target_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
 };
