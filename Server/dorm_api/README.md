@@ -76,9 +76,9 @@ npm run chat:cli -- seller@test.com                 # แชทผ่าน term
 |---|---|
 | บัญชี | `POST /api/register` · `POST /api/login` · `GET /api/me` · `POST /api/owner/login` (เฉพาะ seller) |
 | ค้นหาหอ | `GET /api/dorms` · `GET /api/dorms/:id` · `GET /api/amenities` · `GET /api/tenant/dorms` · `GET /api/tenant/dorms/:id` |
-| ผู้เช่า (ต้อง login) | `POST /api/tenant/dorms/favorite` · `POST /api/tenant/visit-requests` · `POST /api/tenant/bookings` · `GET /api/tenant/bookings/my-bookings` · `PATCH /api/tenant/bookings/:id/cancel` · `GET /api/tenant/notifications` · `PATCH /api/tenant/notifications/read` |
+| ผู้เช่า | `GET /api/tenant/dorms/:dormId/reviews` · `POST /api/tenant/dorms/:dormId/reviews` (ผู้เช่าที่กำลังพัก) · `POST /api/tenant/dorms/favorite` · `POST /api/tenant/visit-requests` · `POST /api/tenant/bookings` · `GET /api/tenant/bookings/my-bookings` · `PATCH /api/tenant/bookings/:id/cancel` · `GET /api/tenant/notifications` · `PATCH /api/tenant/notifications/read` |
 | เจ้าของหอ (ต้อง login เป็น seller) | `GET /api/owner/dashboard/stats` · `GET/POST /api/owner/dorms` · `PUT /api/owner/dorms/:id` · `PATCH /api/owner/dorms/:id/visibility` · `POST /api/owner/dorms/:dormId/rooms` · `PATCH /api/owner/rooms/:roomId/status` · `GET /api/owner/visit-requests` · `PATCH /api/owner/visit-requests/:id/status` · `GET /api/owner/bookings` · `PATCH /api/owner/bookings/:id/status` |
-| แอดมิน (ต้อง login เป็น admin) | `GET /api/admin/overview` · `GET /api/admin/sellers` · `GET /api/admin/reports?status=pending\|resolved\|dismissed\|all` · `PATCH /api/admin/reports/:id` · `PATCH /api/admin/users/:id/status` · `GET /api/admin/dorms?status=pending\|approved\|rejected\|all` · `PATCH /api/admin/dorms/:id/approval` |
+| แอดมิน (ต้อง login เป็น admin) | `GET /api/admin/overview` · `GET /api/admin/sellers` · `GET /api/admin/reviews?status=visible\|hidden\|all` · `PATCH /api/admin/reviews/:id` · `DELETE /api/admin/reviews/:id` · `GET /api/admin/reports?status=pending\|resolved\|dismissed\|all` · `PATCH /api/admin/reports/:id` · `PATCH /api/admin/users/:id/status` · `GET /api/admin/dorms?status=pending\|approved\|rejected\|all` · `PATCH /api/admin/dorms/:id/approval` |
 | แชท (ต้อง login) | `POST/GET /api/conversations` · `GET /api/conversations/:id/messages` · Socket.IO |
 
 ## ขั้นตอนของระบบหอ (ทดสอบในแอปได้ครบ)
@@ -87,6 +87,7 @@ npm run chat:cli -- seller@test.com                 # แชทผ่าน term
 3. ผู้เช่า (tenant@test.com) เห็นหอในหน้าแรก/ค้นหา → กดหัวใจ (บันทึกลง DB) → เข้าหน้ารายละเอียด → **จองห้อง** / นัดดูห้อง / แชท
 4. เจ้าของหอเห็นคำขอจองและคำขอนัด → กดยืนยัน (ห้องเปลี่ยนเป็น "มีผู้เช่า") หรือปฏิเสธ
 5. ผู้เช่าดูสถานะได้ที่เมนู ☰ → **การจองและนัดดูห้องของฉัน**
+6. เมื่อเจ้าของยืนยันและถึงวันเข้าพัก ผู้เช่าที่กำลังพักเขียนรีวิวได้; owner ดูรีวิวหอตนเองและ admin ดู/ซ่อน/ลบได้
 
 ## ระบบจองห้องแบบชำระเงินผ่านแอดมิน (`routes/bookingPaymentRoutes.js`)
 ตาราง: `dorm_rent_plans`, `booking_payments` + คอลัมน์ `messages.message_type` (ไฟล์ `sql/booking_payment.sql`)
@@ -108,6 +109,7 @@ npm run chat:cli -- seller@test.com                 # แชทผ่าน term
 | ผู้เช่า | `POST /api/booking/reservations` · `GET /api/booking/reservations/mine` · `GET /api/booking/reservations/:id` · `POST /api/booking/reservations/:id/pay` · `POST /api/booking/reservations/:id/cancel` |
 | แอดมิน | `GET /api/booking/admin/payments?status=paid` · `PATCH /api/booking/admin/payments/:id` `{approve, note}` |
 | เจ้าของหอ | `GET /api/booking/owner/reservations?status=approved` · `PATCH /api/booking/owner/reservations/:id` `{action: confirm/reject}` · `GET/PUT /api/booking/owner/dorms/:dormId/plans` |
+| เจ้าของหอ | `GET /api/booking/owner/reviews` (ดูรีวิวของหอตนเอง) |
 
 ## รายงานประกาศหอจากผู้เช่า
 ตาราง `user_dorm_reports` และ `user_notifications` สร้างให้อัตโนมัติตอนเปิด `server.js` จากไฟล์ SQL ที่เกี่ยวข้อง
@@ -119,6 +121,13 @@ npm run chat:cli -- seller@test.com                 # แชทผ่าน term
 คำสั่งปิดเรื่องต้องมีหมายเหตุ และบันทึกผู้ตรวจ/วันตรวจพร้อม audit log และ notification
 ให้ผู้รายงานเดิม โดยผู้เช่าดูรายการได้ที่ `GET /api/tenant/notifications` และทำเครื่องหมายอ่านแล้วผ่าน `PATCH /api/tenant/notifications/read`
 
+## รีวิวหอพัก
+ตาราง `dorm_reviews` สร้างอัตโนมัติตอนเปิด `server.js` จาก `sql/dorm_reviews.sql`
+ผู้เช่าจะรีวิวได้เมื่อมีรายการจองที่เจ้าของหอยืนยันแล้ว, ห้องยังมีสถานะผู้เช่า,
+และวันปัจจุบันอยู่ในช่วงเข้าพัก; รีวิวได้หนึ่งครั้งต่อหอ ให้คะแนน 1–5 ดาว
+ผู้ใช้ทั่วไปอ่านรีวิวที่แสดงอยู่ได้ เจ้าของหอดูรีวิวของตนผ่านหน้าเจ้าของหอ
+และแอดมินซ่อน/แสดงหรือลบรีวิวได้จากหน้ารีวิวใน Dashboard
+
 ## ยังไม่มี
-- **รีวิว** และ **KYC** ในหน้าแอดมินยังเป็นข้อมูลตัวอย่าง (ฐานข้อมูลยังไม่มีตารางรีวิว / ยังไม่มี API อัปโหลดเอกสาร KYC)
+- **KYC** ยังไม่มี API อัปโหลดเอกสารจริง
 - อัปโหลดรูป/ไฟล์เอกสารจริง (ตอนนี้เก็บแค่ลิงก์รูปและชื่อไฟล์)

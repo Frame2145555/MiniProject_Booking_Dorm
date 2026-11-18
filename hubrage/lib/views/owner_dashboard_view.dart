@@ -26,6 +26,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
   Map<String, dynamic> _dashboardStats = {};
   List<Map<String, dynamic>> _visitRequests = [];
   List<Map<String, dynamic>> _bookings = []; // คำขอจองห้องจากผู้เช่า
+  List<Map<String, dynamic>> _reviews = [];
   final List<Map<String, dynamic>> _myDorms = [];
 
   bool get _sellerSuspended => _dashboardStats['account_status'] == 'suspended';
@@ -47,6 +48,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
         _dashboardStats = {};
         _visitRequests = [];
         _bookings = [];
+        _reviews = [];
         _loadError = null;
       });
     } else if (!_isLoading) {
@@ -92,6 +94,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
         OwnerApiService.getDorms(),
         OwnerApiService.getVisitRequests(),
         OwnerApiService.getBookings(),
+        OwnerApiService.getReviews(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -105,6 +108,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
             (results[2] as Map<String, dynamic>)['data']
                 as List<Map<String, dynamic>>;
         _bookings = results[3] as List<Map<String, dynamic>>;
+        _reviews = results[4] as List<Map<String, dynamic>>;
       });
     } on OwnerApiException catch (error) {
       if (mounted) setState(() => _loadError = error.message);
@@ -782,11 +786,13 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                     'amenities': amenities,
                     // ชื่อไฟล์เอกสาร -> แอดมินเห็นในคำขอ (ยังไม่ได้อัปโหลดตัวไฟล์จริง)
                     'documents': documents
-                        .map((d) => {
-                              'type': d['type'],
-                              'name': d['name'],
-                              'key': 'uploads/dorms/${d['name']}',
-                            })
+                        .map(
+                          (d) => {
+                            'type': d['type'],
+                            'name': d['name'],
+                            'key': 'uploads/dorms/${d['name']}',
+                          },
+                        )
                         .toList(),
                   });
                   await _loadOwnerData();
@@ -1486,7 +1492,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                       ),
                       IconButton(
                         tooltip: 'ตอบรับนัด',
-                        icon: const Icon(Icons.check_circle, color: AppColors.success),
+                        icon: const Icon(
+                          Icons.check_circle,
+                          color: AppColors.success,
+                        ),
                         onPressed: () => _answerVisit(request, 'accepted'),
                       ),
                     ],
@@ -1505,7 +1514,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
     );
   }
 
-  Future<void> _answerBooking(Map<String, dynamic> booking, String status) async {
+  Future<void> _answerBooking(
+    Map<String, dynamic> booking,
+    String status,
+  ) async {
     await _runOwnerAction(
       () => OwnerApiService.setBookingStatus(booking['id'].toString(), status),
       status == 'confirmed'
@@ -1515,7 +1527,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
   }
 
   /// เรียก API แล้วโหลดข้อมูลหน้าใหม่ + แจ้งผล
-  Future<void> _runOwnerAction(Future<void> Function() action, String done) async {
+  Future<void> _runOwnerAction(
+    Future<void> Function() action,
+    String done,
+  ) async {
     try {
       await action();
       if (!mounted) return;
@@ -1523,9 +1538,9 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
       await _loadOwnerData();
     } on OwnerApiException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     }
   }
 
@@ -1570,7 +1585,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                       ),
                       IconButton(
                         tooltip: 'ยืนยันการจอง',
-                        icon: const Icon(Icons.check_circle, color: AppColors.success),
+                        icon: const Icon(
+                          Icons.check_circle,
+                          color: AppColors.success,
+                        ),
                         onPressed: () => _answerBooking(booking, 'confirmed'),
                       ),
                     ],
@@ -2209,6 +2227,83 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
     );
   }
 
+  Widget _buildDormReviews() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          'รีวิวจากผู้เช่า',
+          subtitle: '${_reviews.length} รายการ',
+        ),
+        if (_reviews.isEmpty)
+          _emptyCard(
+            Icons.rate_review_outlined,
+            'ยังไม่มีรีวิวจากผู้เช่า',
+            null,
+          ),
+        ..._reviews.map((review) {
+          final rating = int.tryParse('${review['rating']}') ?? 0;
+          final hidden = review['status'] == 'hidden';
+          final createdAt = DateTime.tryParse(
+            review['createdAt']?.toString() ?? '',
+          );
+          final dateLabel = createdAt == null
+              ? ''
+              : '${createdAt.day}/${createdAt.month}/${createdAt.year + 543}';
+          return AppCard(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${review['dormName']} • ${review['author']}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    Text(
+                      dateLabel,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: List.generate(
+                    5,
+                    (index) => Icon(
+                      index < rating
+                          ? Icons.star_rounded
+                          : Icons.star_border_rounded,
+                      size: 17,
+                      color: AppColors.star,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(review['comment']?.toString() ?? ''),
+                if (hidden)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text(
+                      'รีวิวนี้ถูกซ่อนโดยแอดมิน',
+                      style: TextStyle(color: AppColors.warning, fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   // Boost Listing Option
   Widget _buildBoostBanner() {
     return Container(
@@ -2351,7 +2446,12 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
               const SizedBox(height: 8),
               _buildReviewStatusSection(),
               const SizedBox(height: 20),
-              _sectionHeader('คำขอจองห้อง', subtitle: '${_bookings.length} รายการ'),
+              _buildDormReviews(),
+              const SizedBox(height: 20),
+              _sectionHeader(
+                'คำขอจองห้อง',
+                subtitle: '${_bookings.length} รายการ',
+              ),
               _buildBookings(),
               const SizedBox(height: 20),
               _sectionHeader('คำขอนัดดูห้อง'),

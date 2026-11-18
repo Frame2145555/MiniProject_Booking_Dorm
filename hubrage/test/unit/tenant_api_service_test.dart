@@ -43,6 +43,49 @@ void main() {
     });
   });
 
+  test('loads reviews and submits a rating with the tenant token', () async {
+    Session.token = 'tenant-token';
+    Session.role = 'tenant';
+    final requests = <http.Request>[];
+    TenantApiService.client = MockClient((request) async {
+      requests.add(request);
+      if (request.method == 'GET') {
+        return http.Response(
+          jsonEncode({
+            'data': {
+              'reviews': [
+                {'id': 8, 'rating': 5, 'comment': 'ห้องสะอาดมาก'},
+              ],
+              'canReview': true,
+              'hasReviewed': false,
+            },
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }
+      return http.Response(jsonEncode({'success': true}), 201);
+    });
+
+    final result = await TenantApiService.getDormReviews(4);
+    await TenantApiService.createDormReview(
+      dormId: 4,
+      rating: 5,
+      comment: 'ห้องสะอาดมาก',
+    );
+
+    expect(result['canReview'], isTrue);
+    expect((result['reviews'] as List).single['id'], 8);
+    expect(requests[0].url.path, '/api/tenant/dorms/4/reviews');
+    expect(requests[1].method, 'POST');
+    expect(requests[1].headers['authorization'], 'Bearer tenant-token');
+    expect(requests[1].url.path, '/api/tenant/dorms/4/reviews');
+    expect(jsonDecode(requests[1].body), {
+      'rating': 5,
+      'comment': 'ห้องสะอาดมาก',
+    });
+  });
+
   test(
     'loads notifications and marks them read for the signed-in tenant',
     () async {

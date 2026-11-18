@@ -8,17 +8,19 @@ import 'dorm_catalog.dart';
 /// - login ด้วยบัญชี admin -> โหลดเจ้าของหอ / คำขอลงประกาศหอ จาก server (/api/admin)
 ///   และปุ่มอนุมัติหอ / ระงับบัญชี จะบันทึกลง MySQL จริง ([serverMode] = true)
 /// - ยังไม่ได้ login เป็น admin -> ใช้ข้อมูลตัวอย่างในไฟล์นี้เหมือนเดิม
-/// (รีวิวยังเป็นข้อมูลตัวอย่าง เพราะฐานข้อมูลยังไม่มีตารางรีวิว)
+/// และรีวิวจาก server เมื่อเข้าด้วยบัญชีแอดมิน
 class AdminConsoleState extends ChangeNotifier {
   AdminConsoleState() {
     _mockSellers = sellers.map((s) => Map<String, dynamic>.from(s)).toList();
     _mockViews = Map<String, int>.from(dormViews);
+    _mockReviews = reviews.map((r) => Map<String, dynamic>.from(r)).toList();
     Session.loggedIn.addListener(_onSessionChanged);
     if (AdminApiService.isAdmin) loadFromServer();
   }
 
   late final List<Map<String, dynamic>> _mockSellers;
   late final Map<String, int> _mockViews;
+  late final List<Map<String, dynamic>> _mockReviews;
 
   /// true = ข้อมูลในหน้าแอดมินมาจาก server แล้ว
   bool serverMode = false;
@@ -144,6 +146,9 @@ class AdminConsoleState extends ChangeNotifier {
         ..addAll(_mockSellers.map((s) => Map<String, dynamic>.from(s)));
       dormRequests.clear();
       reports.clear();
+      reviews
+        ..clear()
+        ..addAll(_mockReviews.map((r) => Map<String, dynamic>.from(r)));
       dormViews
         ..clear()
         ..addAll(_mockViews);
@@ -160,6 +165,7 @@ class AdminConsoleState extends ChangeNotifier {
         AdminApiService.getSellers(),
         AdminApiService.getDorms(status: 'all'),
         AdminApiService.getReports(),
+        AdminApiService.getReviews(),
       ]);
       sellers
         ..clear()
@@ -170,6 +176,9 @@ class AdminConsoleState extends ChangeNotifier {
       reports
         ..clear()
         ..addAll(results[2]);
+      reviews
+        ..clear()
+        ..addAll(results[3].map(_reviewFromApi));
       dormViews
         ..clear()
         ..addAll({
@@ -196,6 +205,44 @@ class AdminConsoleState extends ChangeNotifier {
       return null;
     } on AdminApiException catch (e) {
       return e.message;
+    }
+  }
+
+  Future<String?> setReviewHidden(String reviewId, bool hidden) async {
+    if (!serverMode) {
+      final review = reviews.firstWhere((r) => r['id'].toString() == reviewId);
+      review['status'] = hidden ? 'hidden' : 'visible';
+      notifyListeners();
+      return null;
+    }
+    try {
+      await AdminApiService.setReviewStatus(
+        int.parse(reviewId),
+        hidden ? 'hidden' : 'visible',
+      );
+      await loadFromServer();
+      return null;
+    } on AdminApiException catch (error) {
+      return error.message;
+    } on FormatException {
+      return 'เลขรีวิวไม่ถูกต้อง';
+    }
+  }
+
+  Future<String?> deleteReview(String reviewId) async {
+    if (!serverMode) {
+      reviews.removeWhere((r) => r['id'].toString() == reviewId);
+      notifyListeners();
+      return null;
+    }
+    try {
+      await AdminApiService.deleteReview(int.parse(reviewId));
+      await loadFromServer();
+      return null;
+    } on AdminApiException catch (error) {
+      return error.message;
+    } on FormatException {
+      return 'เลขรีวิวไม่ถูกต้อง';
     }
   }
 
@@ -260,6 +307,17 @@ class AdminConsoleState extends ChangeNotifier {
         .toList(),
     'status': d['status']?.toString() ?? 'pending',
     'submittedAt': 'ส่งคำขอเมื่อ ${_thaiDate(d['submittedAt'])}',
+  };
+
+  static Map<String, dynamic> _reviewFromApi(Map<String, dynamic> review) => {
+    ...review,
+    'id': '${review['id']}',
+    'dormId': '${review['dormId']}',
+    'rating': _int(review['rating']),
+    'author': review['author']?.toString() ?? 'ผู้เช่า',
+    'dormName': review['dormName']?.toString() ?? '-',
+    'date': _thaiDate(review['createdAt']),
+    'status': review['status']?.toString() ?? 'visible',
   };
 
   /// เรียก API -> ถ้าไม่สำเร็จ ย้อนค่ากลับ ([undo]) แล้วเก็บข้อความ error ไว้แสดง
@@ -411,17 +469,6 @@ class AdminConsoleState extends ChangeNotifier {
 
   int get hiddenReviewCount =>
       reviews.where((r) => r['status'] == 'hidden').length;
-
-  void setReviewHidden(String reviewId, bool hidden) {
-    final review = reviews.firstWhere((r) => r['id'] == reviewId);
-    review['status'] = hidden ? 'hidden' : 'visible';
-    notifyListeners();
-  }
-
-  void deleteReview(String reviewId) {
-    reviews.removeWhere((r) => r['id'] == reviewId);
-    notifyListeners();
-  }
 
   void recordDormView(String dormId) {
     dormViews[dormId] = (dormViews[dormId] ?? 0) + 1;

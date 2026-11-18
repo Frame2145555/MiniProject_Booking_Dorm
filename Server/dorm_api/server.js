@@ -81,10 +81,14 @@ const ensureNotificationSchema = async () => {
   const sql = fs.readFileSync(path.join(__dirname, "sql", "user_notifications.sql"), "utf8");
   await pool.promise().query(sql);
 };
+const ensureDormReviewSchema = async () => {
+  const sql = fs.readFileSync(path.join(__dirname, "sql", "dorm_reviews.sql"), "utf8");
+  await pool.promise().query(sql);
+};
 // สร้างตารางของระบบจอง (ถ้ายังไม่มี) ก่อนเปิดรับ request -> ไม่ต้อง import SQL เอง
 Promise.all([
   bookingPayment.ensureSchema(pool),
-  ensureReportSchema().then(ensureNotificationSchema),
+  ensureReportSchema().then(ensureNotificationSchema).then(ensureDormReviewSchema),
 ])
   .catch((err) => console.error("สร้างตารางระบบไม่สำเร็จ:", err.message))
   .finally(() => httpServer.listen(PORT, () => {

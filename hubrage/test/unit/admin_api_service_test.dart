@@ -94,4 +94,38 @@ void main() {
       });
     },
   );
+
+  test('loads, hides, and deletes persisted reviews', () async {
+    Session.token = 'admin-token';
+    Session.role = 'admin';
+    final requests = <http.Request>[];
+    AdminApiService.client = MockClient((request) async {
+      requests.add(request);
+      if (request.method == 'GET') {
+        return http.Response(
+          jsonEncode({
+            'data': [
+              {'id': 31, 'dormName': 'หอทดสอบ', 'status': 'visible'},
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }
+      return http.Response(jsonEncode({'success': true}), 200);
+    });
+
+    final reviews = await AdminApiService.getReviews();
+    await AdminApiService.setReviewStatus(31, 'hidden');
+    await AdminApiService.deleteReview(31);
+
+    expect(reviews.single['id'], 31);
+    expect(requests[0].url.path, '/api/admin/reviews');
+    expect(requests[0].url.queryParameters['status'], 'all');
+    expect(requests[1].method, 'PATCH');
+    expect(requests[1].url.path, '/api/admin/reviews/31');
+    expect(jsonDecode(requests[1].body), {'status': 'hidden'});
+    expect(requests[2].method, 'DELETE');
+    expect(requests[2].url.path, '/api/admin/reviews/31');
+  });
 }

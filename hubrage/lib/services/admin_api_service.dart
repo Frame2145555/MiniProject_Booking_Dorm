@@ -44,6 +44,17 @@ class AdminApiService {
     body: {'status': status, 'note': note},
   );
 
+  static Future<List<Map<String, dynamic>>> getReviews({
+    String status = 'all',
+  }) async =>
+      _list((await _send('GET', '/api/admin/reviews?status=$status'))['data']);
+
+  static Future<void> setReviewStatus(int reviewId, String status) =>
+      _send('PATCH', '/api/admin/reviews/$reviewId', body: {'status': status});
+
+  static Future<void> deleteReview(int reviewId) =>
+      _send('DELETE', '/api/admin/reviews/$reviewId');
+
   /// status: pending | approved | rejected | all
   static Future<List<Map<String, dynamic>>> getDorms({
     String status = 'all',
@@ -93,6 +104,8 @@ class AdminApiService {
     try {
       final request = method == 'GET'
           ? c.get(uri, headers: headers)
+          : method == 'DELETE'
+          ? c.delete(uri, headers: headers)
           : c.patch(uri, headers: headers, body: jsonEncode(body ?? const {}));
       response = await request.timeout(const Duration(seconds: 15));
     } catch (_) {

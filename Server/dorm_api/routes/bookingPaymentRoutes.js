@@ -390,6 +390,21 @@ module.exports = (db, auth, io, jwtSecret) => {
   // ───────────────────────── เจ้าของหอ ─────────────────────────
   const ownerOnly = auth.requireRole("seller");
 
+  router.get("/owner/reviews", ownerOnly, async (req, res) => {
+    const [rows] = await db.query(
+      `SELECT r.id, r.dorm_id AS dormId, d.name AS dormName,
+              u.full_name AS author, r.rating, r.comment, r.status,
+              r.created_at AS createdAt
+         FROM dorm_reviews r
+         JOIN dorms d ON d.id = r.dorm_id
+         JOIN users u ON u.id = r.reviewer_id
+        WHERE d.owner_id = ?
+        ORDER BY r.created_at DESC, r.id DESC`,
+      [req.user.id]
+    );
+    res.json({ success: true, count: rows.length, data: rows });
+  });
+
   router.get("/owner/reservations", ownerOnly, async (req, res) => {
     const status = String(req.query.status || "approved");
     if (status !== "all" && !STATUS_LABEL[status]) return fail(res, 400, "status ไม่ถูกต้อง");

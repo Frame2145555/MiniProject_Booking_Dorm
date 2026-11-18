@@ -81,6 +81,55 @@ module.exports = (db, auth) => {
     res.json({ success: true, count: rows.length, data: rows });
   });
 
+  router.get("/reviews", async (req, res) => {
+    const status = String(req.query.status || "all");
+    if (!["all", "visible", "hidden"].includes(status)) {
+      return fail(res, 400, "status ต้องเป็น visible, hidden หรือ all");
+    }
+    const [rows] = await db.query(
+      `SELECT r.id, r.dorm_id AS dormId, d.name AS dormName,
+              u.full_name AS author, r.rating, r.comment, r.status,
+              r.created_at AS createdAt
+         FROM dorm_reviews r
+         JOIN dorms d ON d.id = r.dorm_id
+         JOIN users u ON u.id = r.reviewer_id
+        ${status === "all" ? "" : "WHERE r.status = ?"}
+        ORDER BY r.created_at DESC, r.id DESC`,
+      status === "all" ? [] : [status]
+    );
+    res.json({ success: true, count: rows.length, data: rows });
+  });
+
+  router.patch("/reviews/:id", async (req, res) => {
+    const id = toId(req.params.id);
+    const status = req.body?.status;
+    if (!id) return fail(res, 400, "เลขรีวิวไม่ถูกต้อง");
+    if (!["visible", "hidden"].includes(status)) {
+      return fail(res, 400, 'status ต้องเป็น "visible" หรือ "hidden"');
+    }
+    const [[review]] = await db.query("SELECT id FROM dorm_reviews WHERE id = ?", [id]);
+    if (!review) return fail(res, 404, "ไม่พบรีวิวนี้");
+    await db.query(
+      "UPDATE dorm_reviews SET status = ? WHERE id = ?",
+      [status, id]
+    );
+    await audit(req.user.id, `dorm_review_${status}`, "dorm_review", id, null);
+    res.json({ success: true, data: { id, status } });
+  });
+
+  router.delete("/reviews/:id", async (req, res) => {
+    const id = toId(req.params.id);
+    if (!id) return fail(res, 400, "เลขรีวิวไม่ถูกต้อง");
+    const [[review]] = await db.query(
+      "SELECT dorm_id AS dormId FROM dorm_reviews WHERE id = ?",
+      [id]
+    );
+    if (!review) return fail(res, 404, "ไม่พบรีวิวนี้");
+    await db.query("DELETE FROM dorm_reviews WHERE id = ?", [id]);
+    await audit(req.user.id, "delete_dorm_review", "dorm", review.dormId, null);
+    res.json({ success: true, data: { id } });
+  });
+
   router.patch("/reports/:id", async (req, res) => {
     const id = toId(req.params.id);
     const status = req.body?.status;

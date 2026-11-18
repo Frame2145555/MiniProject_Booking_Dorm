@@ -83,6 +83,18 @@ class OwnerApiService {
         .toList();
   }
 
+  static Future<List<Map<String, dynamic>>> getReviews() async {
+    final response = await _send('GET', '/api/booking/owner/reviews');
+    final data = response['data'];
+    if (data is! List) {
+      throw const OwnerApiException('รูปแบบรีวิวจากเซิร์ฟเวอร์ไม่ถูกต้อง');
+    }
+    return data
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
   /// status: confirmed (ห้องจะเปลี่ยนเป็นมีผู้เช่า) | cancelled | completed
   static Future<void> setBookingStatus(String bookingId, String status) async {
     await _send(

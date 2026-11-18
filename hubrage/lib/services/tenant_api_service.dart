@@ -85,6 +85,32 @@ class TenantApiService {
     );
   }
 
+  static Future<Map<String, dynamic>> getDormReviews(int dormId) async {
+    final response = await _send('GET', '/api/tenant/dorms/$dormId/reviews');
+    final data = response['data'];
+    if (data is! Map) {
+      throw const TenantApiException('ข้อมูลรีวิวจากเซิร์ฟเวอร์ไม่ถูกต้อง');
+    }
+    return {
+      'reviews': _list(data['reviews']),
+      'canReview': data['canReview'] == true,
+      'hasReviewed': data['hasReviewed'] == true,
+    };
+  }
+
+  static Future<void> createDormReview({
+    required int dormId,
+    required int rating,
+    required String comment,
+  }) async {
+    await _send(
+      'POST',
+      '/api/tenant/dorms/$dormId/reviews',
+      body: {'rating': rating, 'comment': comment},
+      needLogin: true,
+    );
+  }
+
   static Future<List<Map<String, dynamic>>> getNotifications() async {
     final response = await _send(
       'GET',

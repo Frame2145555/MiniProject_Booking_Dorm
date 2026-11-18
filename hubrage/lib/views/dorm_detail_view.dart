@@ -14,7 +14,7 @@ import 'chat_room_view.dart';
 
 class DormDetailView extends StatefulWidget {
   final Map<String, dynamic> dorm;
-  final AdminConsoleState? consoleState; // ใช้ดึงรีวิวที่แอดมินยังไม่ซ่อน
+  final AdminConsoleState? consoleState;
   final bool isFavorite;
   final ValueChanged<bool>? onFavoriteChanged;
   final Future<void> Function(DateTime visitAt)? onVisitRequest;
@@ -43,11 +43,26 @@ class _DormDetailViewState extends State<DormDetailView> {
   String? _roomsError;
   int? _bookingRoomId; // ห้องที่กำลังส่งคำขอจอง
   bool _submittingReport = false;
+  final _reviewController = TextEditingController();
+  List<Map<String, dynamic>> _reviews = [];
+  bool _loadingReviews = false;
+  bool _canReview = false;
+  bool _hasReviewed = false;
+  bool _submittingReview = false;
+  int _reviewRating = 5;
+  String? _reviewsError;
 
   @override
   void initState() {
     super.initState();
     _loadDetail();
+    _loadReviews();
+  }
+
+  @override
+  void dispose() {
+    _reviewController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadDetail() async {
@@ -71,6 +86,67 @@ class _DormDetailViewState extends State<DormDetailView> {
       if (mounted) setState(() => _roomsError = e.message);
     } finally {
       if (mounted) setState(() => _loadingRooms = false);
+    }
+  }
+
+  Future<void> _loadReviews() async {
+    final dormId = _dormDbId;
+    if (dormId == null) return;
+    setState(() {
+      _loadingReviews = true;
+      _reviewsError = null;
+    });
+    try {
+      final result = await TenantApiService.getDormReviews(dormId);
+      if (!mounted) return;
+      setState(() {
+        _reviews = result['reviews'] as List<Map<String, dynamic>>;
+        _canReview = result['canReview'] as bool;
+        _hasReviewed = result['hasReviewed'] as bool;
+      });
+    } on TenantApiException catch (error) {
+      if (!mounted) return;
+      final state = widget.consoleState;
+      if (state != null && !state.serverMode) {
+        final dormId = widget.dorm['id']?.toString() ?? '';
+        setState(() {
+          _reviews = state.visibleReviewsFor(dormId);
+          _reviewsError = null;
+        });
+      } else {
+        setState(() => _reviewsError = error.message);
+      }
+    } finally {
+      if (mounted) setState(() => _loadingReviews = false);
+    }
+  }
+
+  Future<void> _submitReview() async {
+    if (!_requireLogin('กรุณาเข้าสู่ระบบก่อนเขียนรีวิว')) return;
+    if (Session.role != 'tenant') {
+      _showMessage('เฉพาะผู้เช่าที่กำลังพักอยู่ในหอรีวิวได้');
+      return;
+    }
+    final dormId = _dormDbId;
+    final comment = _reviewController.text.trim();
+    if (dormId == null || comment.length < 10) {
+      _showMessage('รีวิวต้องมีอย่างน้อย 10 ตัวอักษร');
+      return;
+    }
+    setState(() => _submittingReview = true);
+    try {
+      await TenantApiService.createDormReview(
+        dormId: dormId,
+        rating: _reviewRating,
+        comment: comment,
+      );
+      _reviewController.clear();
+      await _loadReviews();
+      if (mounted) _showMessage('ส่งรีวิวแล้ว ขอบคุณสำหรับความคิดเห็น');
+    } on TenantApiException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } finally {
+      if (mounted) setState(() => _submittingReview = false);
     }
   }
 
@@ -965,68 +1041,150 @@ class _DormDetailViewState extends State<DormDetailView> {
     );
   }
 
-  /// รีวิวจากผู้เช่า — รีวิวที่แอดมินซ่อน/ลบแล้วจะไม่แสดงตรงนี้
   Widget _reviewsSection() {
-    final state = widget.consoleState;
-    final dormId = widget.dorm['id']?.toString();
-    if (state == null || dormId == null) return _emptyReviews();
-    return AnimatedBuilder(
-      animation: state,
-      builder: (context, _) {
-        final reviews = state.visibleReviewsFor(dormId);
-        if (reviews.isEmpty) return _emptyReviews();
-        return Column(
-          children: reviews.map((r) {
-            final rating = (r['rating'] as num).toInt();
-            return AppCard(
-              margin: const EdgeInsets.only(bottom: 10),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            r['author'].toString(),
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        Text(
-                          r['date'].toString(),
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            color: AppColors.muted,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: List.generate(
-                        5,
-                        (i) => Icon(
-                          i < rating
-                              ? Icons.star_rounded
-                              : Icons.star_border_rounded,
-                          size: 17,
-                          color: AppColors.star,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      r['comment'].toString(),
-                      style: const TextStyle(height: 1.45, fontSize: 13.5),
-                    ),
-                  ],
+    return Column(
+      children: [
+        if (_loadingReviews) const LinearProgressIndicator(),
+        if (_reviewsError != null)
+          AppCard(
+            child: ListTile(
+              title: Text(_reviewsError!),
+              trailing: IconButton(
+                tooltip: 'โหลดรีวิวอีกครั้ง',
+                onPressed: _loadReviews,
+                icon: const Icon(Icons.refresh),
+              ),
+            ),
+          ),
+        if (_canReview) _reviewComposer(),
+        if (_hasReviewed)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'คุณรีวิวหอนี้แล้ว',
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            ),
+          ),
+        if (_reviews.isEmpty) _emptyReviews(),
+        ..._reviews.map(_reviewCard),
+      ],
+    );
+  }
+
+  Widget _reviewComposer() => AppCard(
+    margin: const EdgeInsets.only(bottom: 12),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'เขียนรีวิวจากประสบการณ์เข้าพัก',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: List.generate(
+              5,
+              (index) => IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: _submittingReview
+                    ? null
+                    : () => setState(() => _reviewRating = index + 1),
+                icon: Icon(
+                  index < _reviewRating
+                      ? Icons.star_rounded
+                      : Icons.star_border_rounded,
+                  color: AppColors.star,
                 ),
               ),
-            );
-          }).toList(),
-        );
-      },
+            ),
+          ),
+          TextField(
+            controller: _reviewController,
+            minLines: 2,
+            maxLines: 5,
+            maxLength: 1000,
+            decoration: const InputDecoration(
+              hintText: 'เล่าประสบการณ์เข้าพัก (อย่างน้อย 10 ตัวอักษร)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: ElevatedButton.icon(
+              onPressed: _submittingReview ? null : _submitReview,
+              icon: _submittingReview
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send_outlined, size: 18),
+              label: const Text('ส่งรีวิว'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _reviewCard(Map<String, dynamic> review) {
+    final rating = (review['rating'] as num?)?.toInt() ?? 0;
+    final rawDate = review['createdAt']?.toString() ?? '';
+    final date = DateTime.tryParse(rawDate);
+    final dateLabel = date == null
+        ? review['date']?.toString() ?? ''
+        : '${date.day.toString().padLeft(2, '0')}/'
+              '${date.month.toString().padLeft(2, '0')}/${date.year + 543}';
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    review['author']?.toString() ?? 'ผู้เช่า',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                Text(
+                  dateLabel,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.muted,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: List.generate(
+                5,
+                (index) => Icon(
+                  index < rating
+                      ? Icons.star_rounded
+                      : Icons.star_border_rounded,
+                  size: 17,
+                  color: AppColors.star,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              review['comment']?.toString() ?? '',
+              style: const TextStyle(height: 1.45, fontSize: 13.5),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

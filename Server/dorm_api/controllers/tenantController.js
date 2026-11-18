@@ -17,6 +17,10 @@ exports.getDorms = async (req, res) => {
         d.cover_image_url AS imageUrl,
         d.latitude,
         d.longitude,
+        (SELECT ROUND(AVG(rating), 1) FROM dorm_reviews
+          WHERE dorm_id = d.id AND status = 'visible') AS rating,
+        (SELECT COUNT(*) FROM dorm_reviews
+          WHERE dorm_id = d.id AND status = 'visible') AS reviewCount,
         COALESCE(fav.is_fav, 0) AS isFavorite
       FROM dorms d
       LEFT JOIN (
@@ -63,7 +67,6 @@ exports.getDorms = async (req, res) => {
         [dorm.id]
       );
       dorm.tags = amenityRows.map(a => a.name);
-      dorm.rating = 4.7; // คะแนนจำลอง
     }
 
     // Filter: สิ่งอำนวยความสะดวก (ถ้ามีการระบุใน Query Params)
@@ -107,6 +110,10 @@ exports.getDormById = async (req, res) => {
         d.cover_image_url AS imageUrl,
         d.latitude,
         d.longitude,
+        (SELECT ROUND(AVG(rating), 1) FROM dorm_reviews
+          WHERE dorm_id = d.id AND status = 'visible') AS rating,
+        (SELECT COUNT(*) FROM dorm_reviews
+          WHERE dorm_id = d.id AND status = 'visible') AS reviewCount,
         d.listing_status,
         d.approval_status,
         COALESCE(fav.is_fav, 0) AS isFavorite
@@ -146,7 +153,6 @@ exports.getDormById = async (req, res) => {
       electricity: '7 บาท / หน่วย',
       water: '18 บาท / หน่วย (ขั้นต่ำ 100 บาท)'
     };
-    dorm.rating = 4.7;
 
     res.json({ success: true, data: dorm });
   } catch (err) {
@@ -213,6 +219,134 @@ exports.createDormReport = async (req, res) => {
     });
   } catch (error) {
     await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+exports.getDormReviews = async (req, res) => {
+  const dormId = Number(req.params.dormId);
+  if (!Number.isSafeInteger(dormId) || dormId <= 0) {
+    return res.status(400).json({ success: false, message: 'เลขหอพักไม่ถูกต้อง' });
+  }
+  try {
+    const [[dorm]] = await db.query('SELECT id, name FROM dorms WHERE id = ?', [dormId]);
+    if (!dorm) {
+      return res.status(404).json({ success: false, message: 'ไม่พบหอพักนี้' });
+    }
+
+    const [reviews] = await db.query(
+      `SELECT r.id, r.dorm_id AS dormId, d.name AS dormName,
+              u.full_name AS author, r.rating, r.comment, r.status,
+              r.created_at AS createdAt
+         FROM dorm_reviews r
+         JOIN users u ON u.id = r.reviewer_id
+         JOIN dorms d ON d.id = r.dorm_id
+        WHERE r.dorm_id = ? AND r.status = 'visible'
+        ORDER BY r.created_at DESC, r.id DESC`,
+      [dormId]
+    );
+    const tenantId = req.user?.role === 'tenant' ? req.user.id : null;
+    let canReview = false;
+    let hasReviewed = false;
+    if (tenantId) {
+      const [[existing]] = await db.query(
+        'SELECT id FROM dorm_reviews WHERE dorm_id = ? AND reviewer_id = ?',
+        [dormId, tenantId]
+      );
+      hasReviewed = Boolean(existing);
+      if (!hasReviewed) {
+        const [[stay]] = await db.query(
+          `SELECT p.id
+             FROM booking_payments p
+             JOIN bookings b ON b.id = p.booking_id
+             JOIN rooms r ON r.id = p.room_id
+            WHERE p.dorm_id = ? AND p.tenant_id = ?
+              AND p.status = 'completed' AND b.status = 'confirmed'
+              AND r.status = 'occupied'
+              AND b.starts_at <= CURDATE() AND b.ends_at >= CURDATE()
+            LIMIT 1`,
+          [dormId, tenantId]
+        );
+        canReview = Boolean(stay);
+      }
+    }
+    res.json({
+      success: true,
+      count: reviews.length,
+      data: { reviews, canReview, hasReviewed },
+    });
+  } catch (error) {
+    console.error('Error in getDormReviews:', error);
+    res.status(500).json({ success: false, message: 'ดึงรีวิวไม่สำเร็จ' });
+  }
+};
+
+exports.createDormReview = async (req, res) => {
+  const dormId = Number(req.params.dormId);
+  const tenantId = req.user?.id;
+  const rating = req.body?.rating;
+  const comment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : '';
+
+  if (req.user?.role !== 'tenant') {
+    return res.status(403).json({ success: false, message: 'เฉพาะผู้เช่าที่กำลังพักอยู่ในหอรีวิวได้' });
+  }
+  if (!Number.isSafeInteger(dormId) || dormId <= 0) {
+    return res.status(400).json({ success: false, message: 'เลขหอพักไม่ถูกต้อง' });
+  }
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return res.status(400).json({ success: false, message: 'คะแนนต้องอยู่ระหว่าง 1 ถึง 5 ดาว' });
+  }
+  if (comment.length < 10 || comment.length > 1000) {
+    return res.status(400).json({ success: false, message: 'รีวิวต้องมีความยาว 10 ถึง 1,000 ตัวอักษร' });
+  }
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [[stay]] = await connection.query(
+      `SELECT p.id
+         FROM booking_payments p
+         JOIN bookings b ON b.id = p.booking_id
+         JOIN rooms r ON r.id = p.room_id
+        WHERE p.dorm_id = ? AND p.tenant_id = ?
+          AND p.status = 'completed' AND b.status = 'confirmed'
+          AND r.status = 'occupied'
+          AND b.starts_at <= CURDATE() AND b.ends_at >= CURDATE()
+        LIMIT 1
+        FOR UPDATE`,
+      [dormId, tenantId]
+    );
+    if (!stay) {
+      await connection.rollback();
+      return res.status(403).json({ success: false, message: 'รีวิวได้เฉพาะผู้เช่าที่กำลังพักอยู่ในหอนี้' });
+    }
+
+    const [[existing]] = await connection.query(
+      'SELECT id FROM dorm_reviews WHERE dorm_id = ? AND reviewer_id = ?',
+      [dormId, tenantId]
+    );
+    if (existing) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, message: 'คุณรีวิวหอนี้ไปแล้ว' });
+    }
+
+    const [result] = await connection.query(
+      `INSERT INTO dorm_reviews (dorm_id, reviewer_id, rating, comment)
+       VALUES (?, ?, ?, ?)`,
+      [dormId, tenantId, rating, comment]
+    );
+    await connection.commit();
+    res.status(201).json({
+      success: true,
+      data: { id: result.insertId, dormId, rating, comment, status: 'visible' },
+    });
+  } catch (error) {
+    await connection.rollback();
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ success: false, message: 'คุณรีวิวหอนี้ไปแล้ว' });
+    }
     throw error;
   } finally {
     connection.release();

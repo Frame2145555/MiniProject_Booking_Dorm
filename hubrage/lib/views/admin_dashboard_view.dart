@@ -1138,11 +1138,20 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
       ),
     );
     if (ok == true && mounted) {
-      widget.consoleState.deleteReview(review['id'].toString());
+      final error = await widget.consoleState.deleteReview(
+        review['id'].toString(),
+      );
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('ลบรีวิวแล้ว')));
+      ).showSnackBar(SnackBar(content: Text(error ?? 'ลบรีวิวแล้ว')));
     }
+  }
+
+  Future<void> _setReviewHidden(String reviewId, bool hidden) async {
+    final error = await widget.consoleState.setReviewHidden(reviewId, hidden);
+    if (!mounted || error == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
   }
 
   List<Widget> _reviewList() {
@@ -1235,10 +1244,8 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () => widget.consoleState.setReviewHidden(
-                          review['id'].toString(),
-                          !hidden,
-                        ),
+                        onPressed: () =>
+                            _setReviewHidden(review['id'].toString(), !hidden),
                         icon: Icon(
                           hidden
                               ? Icons.visibility_outlined
