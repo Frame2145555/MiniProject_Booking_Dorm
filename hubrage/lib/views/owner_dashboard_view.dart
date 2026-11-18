@@ -275,8 +275,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
     final maxPriceController = TextEditingController(
       text: dorm['priceMax']?.toString() ?? '',
     );
-    final imageController = TextEditingController(
-      text: dorm['imageUrl']?.toString() ?? '',
+    // รูปหน้าปก: null = ไม่มีรูป | String = รูปเดิม | Uint8List = รูปที่เพิ่งเลือกจากเครื่อง
+    final existingCover = dorm['imageUrl']?.toString() ?? '';
+    final coverImage = ValueNotifier<dynamic>(
+      existingCover.isEmpty ? null : existingCover,
     );
     // สำเนารูปเพิ่มเติม: แก้ไขได้อิสระ แล้วค่อยบันทึกกลับเมื่อกด "บันทึก"
     final galleryImages = List<dynamic>.from(
@@ -296,6 +298,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
           ],
         ),
         content: SingleChildScrollView(
+          padding: const EdgeInsets.only(top: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -347,9 +350,9 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 ],
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: imageController,
-                decoration: AppInputs.field(labelText: 'URL รูปหน้าปก'),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: DormCoverEditor(cover: coverImage),
               ),
               const SizedBox(height: 16),
               DormGalleryEditor(images: galleryImages),
@@ -398,6 +401,12 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                       saving.value = true;
                       final dormId = dorm['id'].toString();
                       try {
+                        // รูปหน้าปก: ถ้าเลือกรูปใหม่จากเครื่อง ให้อัปโหลดก่อน แล้วเก็บเป็น path บน server
+                        var coverUrl = '';
+                        final cover = coverImage.value;
+                        if (cover != null && !(cover is String && cover.isEmpty)) {
+                          coverUrl = (await _uploadGallery(dormId, [cover])).first;
+                        }
                         await OwnerApiService.updateDorm(dormId, {
                           'title': titleController.text.trim(),
                           'location': addressController.text.trim(),
@@ -405,7 +414,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                           'description': descriptionController.text.trim(),
                           'priceMin': int.parse(minPriceController.text),
                           'priceMax': int.parse(maxPriceController.text),
-                          'imageUrl': imageController.text.trim(),
+                          'imageUrl': coverUrl,
                         });
                         // รูปเพิ่มเติม: อัปโหลดรูปจากเครื่อง แล้วบันทึกรายการรูปทั้งหมด
                         final urls = await _uploadGallery(dormId, galleryImages);
@@ -2279,7 +2288,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
               children: [
                 imgUrl.isNotEmpty
                     ? Image.network(
-                        imgUrl,
+                        resolveImageUrl(imgUrl),
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => placeholder,
                       )
