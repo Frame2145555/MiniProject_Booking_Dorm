@@ -24,7 +24,8 @@ const app = express();
 const httpServer = http.createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
 app.use(cors());
-app.use(express.json({ limit: "100kb" }));
+// KYC images are sent as data URLs in the current mobile client.
+app.use(express.json({ limit: "20mb" }));
 
 const auth = require("./loginandregister")(db, { jwtSecret: appCfg.jwt_secret });
 app.use("/api", auth.router);                                  // POST /api/register, /api/login · GET /api/me
@@ -73,6 +74,14 @@ app.use((err, req, res, next) => {
 require("./chat_socket").setupChatSocket(io, pool);
 
 const PORT = appCfg.port || 3000;
+httpServer.on("error", (error) => {
+  console.error("[SERVER ERROR] HTTP server failed", {
+    code: error.code,
+    address: error.address,
+    port: error.port || PORT,
+    message: error.message,
+  });
+});
 const ensureReportSchema = async () => {
   const sql = fs.readFileSync(path.join(__dirname, "sql", "user_dorm_reports.sql"), "utf8");
   await pool.promise().query(sql);
@@ -81,10 +90,43 @@ const ensureNotificationSchema = async () => {
   const sql = fs.readFileSync(path.join(__dirname, "sql", "user_notifications.sql"), "utf8");
   await pool.promise().query(sql);
 };
+const ensureKycSchema = async () => {
+  console.log("[KYC DEBUG] checking schema");
+  console.log("[KYC DEBUG] database", {
+    host: require("./db-config.json").host,
+    database: require("./db-config.json").database,
+  });
+  const sql = fs.readFileSync(path.join(__dirname, "sql", "kyc.sql"), "utf8");
+  for (const statement of sql.split(';').map((s) => s.trim()).filter(Boolean)) {
+    console.log("[KYC DEBUG] running schema statement", statement.slice(0, 90));
+    await pool.promise().query(statement);
+  }
+  // Older dumps already have the KYC tables; add only columns used by this API.
+  for (const statement of [
+    "ALTER TABLE kyc_requests ADD COLUMN id_card_number VARCHAR(13) NULL",
+    "ALTER TABLE kyc_documents ADD COLUMN file_data LONGTEXT NULL",
+    "ALTER TABLE kyc_documents ADD COLUMN watermark_text VARCHAR(255) NOT NULL DEFAULT ''",
+    "ALTER TABLE kyc_documents MODIFY COLUMN private_storage_key VARCHAR(500) NOT NULL DEFAULT ''",
+  ]) {
+    try {
+      await pool.promise().query(statement);
+      console.log("[KYC DEBUG] migration applied", statement);
+    } catch (error) {
+      if (error.code === "ER_DUP_FIELDNAME" || error.code === "ER_DUP_FIELD_NAME") {
+        console.log("[KYC DEBUG] migration already applied", statement);
+      } else {
+        console.error("[KYC ERROR] migration failed", { statement, code: error.code, message: error.message });
+        throw error;
+      }
+    }
+  }
+  console.log("[KYC DEBUG] schema ready");
+};
 // สร้างตารางของระบบจอง (ถ้ายังไม่มี) ก่อนเปิดรับ request -> ไม่ต้อง import SQL เอง
 Promise.all([
   bookingPayment.ensureSchema(pool),
   ensureReportSchema().then(ensureNotificationSchema),
+  ensureKycSchema(),
 ])
   .catch((err) => console.error("สร้างตารางระบบไม่สำเร็จ:", err.message))
   .finally(() => httpServer.listen(PORT, () => {

@@ -115,6 +115,21 @@ class _DormDetailViewState extends State<DormDetailView> {
       _detail?['description']?.toString() ??
       widget.dorm['description']?.toString() ??
       'หอพักใกล้มหาวิทยาลัย เดินทางสะดวกและมีระบบรักษาความปลอดภัย';
+  bool get _verifiedOwner {
+    final source = _detail ?? widget.dorm;
+    final value =
+        source['verified_owner'] ??
+        source['verifiedOwner'] ??
+        source['ownerVerified'];
+    final status = source['kyc'] ?? source['kycStatus'];
+    return value == true ||
+        value == 1 ||
+        value?.toString().toLowerCase() == 'true' ||
+        value?.toString() == '1' ||
+        status?.toString().toLowerCase() == 'approved' ||
+        status?.toString().toLowerCase() == 'verified';
+  }
+
   String? get _coordinates {
     final latitude = widget.dorm['latitude'];
     final longitude = widget.dorm['longitude'];
@@ -204,7 +219,39 @@ class _DormDetailViewState extends State<DormDetailView> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(_title, style: const TextStyle(fontWeight: FontWeight.bold)),
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      _title,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  if (_verifiedOwner) ...[
+                    const SizedBox(width: 6),
+                    const Tooltip(
+                      message: 'ยืนยันตัวตนแล้ว (Verified Owner)',
+                      child: Icon(
+                        Icons.verified,
+                        size: 19,
+                        color: AppColors.success,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              if (_verifiedOwner)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'ยืนยันตัวตนแล้ว (Verified Owner)',
+                    style: TextStyle(
+                      color: AppColors.success,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 icon: const Icon(Icons.calendar_month),
@@ -730,12 +777,39 @@ class _DormDetailViewState extends State<DormDetailView> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: Text(
-                          _title,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                _title,
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            if (_verifiedOwner) ...[
+                              const SizedBox(width: 8),
+                              const Tooltip(
+                                message: 'เจ้าของหอยืนยันตัวตนแล้ว',
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: AppColors.successSoft,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Padding(
+                                    padding: EdgeInsets.all(3),
+                                    child: Icon(
+                                      Icons.verified_rounded,
+                                      color: AppColors.success,
+                                      size: 22,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       const SizedBox(width: 12),

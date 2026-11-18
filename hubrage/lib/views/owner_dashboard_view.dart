@@ -5,6 +5,7 @@ import '../models/dorm_model.dart';
 import '../services/owner_api_service.dart';
 import '../services/session.dart';
 import '../theme/app_theme.dart';
+import 'owner_kyc_view.dart';
 import '../widgets/dorm_gallery.dart';
 
 class OwnerDashboardView extends StatefulWidget {
@@ -782,11 +783,13 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                     'amenities': amenities,
                     // ชื่อไฟล์เอกสาร -> แอดมินเห็นในคำขอ (ยังไม่ได้อัปโหลดตัวไฟล์จริง)
                     'documents': documents
-                        .map((d) => {
-                              'type': d['type'],
-                              'name': d['name'],
-                              'key': 'uploads/dorms/${d['name']}',
-                            })
+                        .map(
+                          (d) => {
+                            'type': d['type'],
+                            'name': d['name'],
+                            'key': 'uploads/dorms/${d['name']}',
+                          },
+                        )
                         .toList(),
                   });
                   await _loadOwnerData();
@@ -1486,7 +1489,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                       ),
                       IconButton(
                         tooltip: 'ตอบรับนัด',
-                        icon: const Icon(Icons.check_circle, color: AppColors.success),
+                        icon: const Icon(
+                          Icons.check_circle,
+                          color: AppColors.success,
+                        ),
                         onPressed: () => _answerVisit(request, 'accepted'),
                       ),
                     ],
@@ -1505,7 +1511,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
     );
   }
 
-  Future<void> _answerBooking(Map<String, dynamic> booking, String status) async {
+  Future<void> _answerBooking(
+    Map<String, dynamic> booking,
+    String status,
+  ) async {
     await _runOwnerAction(
       () => OwnerApiService.setBookingStatus(booking['id'].toString(), status),
       status == 'confirmed'
@@ -1515,7 +1524,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
   }
 
   /// เรียก API แล้วโหลดข้อมูลหน้าใหม่ + แจ้งผล
-  Future<void> _runOwnerAction(Future<void> Function() action, String done) async {
+  Future<void> _runOwnerAction(
+    Future<void> Function() action,
+    String done,
+  ) async {
     try {
       await action();
       if (!mounted) return;
@@ -1523,9 +1535,9 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
       await _loadOwnerData();
     } on OwnerApiException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
     }
   }
 
@@ -1570,7 +1582,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                       ),
                       IconButton(
                         tooltip: 'ยืนยันการจอง',
-                        icon: const Icon(Icons.check_circle, color: AppColors.success),
+                        icon: const Icon(
+                          Icons.check_circle,
+                          color: AppColors.success,
+                        ),
                         onPressed: () => _answerBooking(booking, 'confirmed'),
                       ),
                     ],
@@ -2313,6 +2328,19 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                     onPressed: _isLoading ? null : _loadOwnerData,
                     icon: const Icon(Icons.refresh),
                   ),
+                  IconButton(
+                    tooltip: 'ยืนยันตัวตนเจ้าของหอพัก',
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const OwnerKycView()),
+                    ),
+                    icon: Icon(
+                      Icons.verified_user_outlined,
+                      color: _dashboardStats['verified_owner'] == true
+                          ? AppColors.success
+                          : AppColors.ink,
+                    ),
+                  ),
                   TextButton.icon(
                     onPressed: _logoutOwner,
                     icon: const Icon(Icons.logout_rounded),
@@ -2351,7 +2379,10 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
               const SizedBox(height: 8),
               _buildReviewStatusSection(),
               const SizedBox(height: 20),
-              _sectionHeader('คำขอจองห้อง', subtitle: '${_bookings.length} รายการ'),
+              _sectionHeader(
+                'คำขอจองห้อง',
+                subtitle: '${_bookings.length} รายการ',
+              ),
               _buildBookings(),
               const SizedBox(height: 20),
               _sectionHeader('คำขอนัดดูห้อง'),

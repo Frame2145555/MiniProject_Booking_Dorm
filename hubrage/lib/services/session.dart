@@ -5,6 +5,7 @@ class Session {
   static int userId = 0;
   static String role = '';
   static String fullName = '';
+  static bool verifiedOwner = false;
   static bool get isLoggedIn => token.isNotEmpty;
 
   /// แจ้งทุกหน้าเมื่อ login / logout
@@ -16,6 +17,7 @@ class Session {
     userId = 0;
     role = '';
     fullName = '';
+    verifiedOwner = false;
     loggedIn.value = false;
   }
 }

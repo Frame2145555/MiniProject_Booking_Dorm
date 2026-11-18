@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/admin_console_state.dart';
 import '../models/kyc_request_model.dart';
 import '../theme/app_theme.dart';
+import '../services/admin_api_service.dart';
+import '../services/session.dart';
 import 'admin_kyc_detail_view.dart';
 import 'admin_users_view.dart';
 import 'admin_payments_view.dart';
@@ -19,6 +23,44 @@ class AdminDashboardView extends StatefulWidget {
 class _AdminDashboardViewState extends State<AdminDashboardView> {
   int _selectedSection = 0;
   String _reportFilter = 'pending';
+
+  @override
+  void initState() {
+    super.initState();
+    Session.loggedIn.addListener(_onSessionChanged);
+    if (AdminApiService.isAdmin) unawaited(_loadKyc());
+  }
+
+  @override
+  void dispose() {
+    Session.loggedIn.removeListener(_onSessionChanged);
+    super.dispose();
+  }
+
+  void _onSessionChanged() {
+    if (AdminApiService.isAdmin) {
+      unawaited(_loadKyc());
+    } else if (mounted) {
+      setState(() => _kycList.clear());
+    }
+  }
+
+  Future<void> _loadKyc() async {
+    try {
+      final rows = await AdminApiService.getKycRequests(status: 'all');
+      if (!mounted) return;
+      setState(
+        () => _kycList
+          ..clear()
+          ..addAll(rows.map(KYCRequestModel.fromJson)),
+      );
+    } on AdminApiException catch (error) {
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
 
   final List<KYCRequestModel> _kycList = [
     KYCRequestModel(
@@ -1035,13 +1077,40 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
         margin: const EdgeInsets.only(bottom: 12),
         child: InkWell(
           onTap: () async {
+            final detail =
+                AdminApiService.isAdmin && int.tryParse(item.id) != null
+                ? await AdminApiService.getKycRequest(item.id)
+                : null;
+            final viewItem = detail == null
+                ? item
+                : KYCRequestModel.fromJson(detail);
             final result = await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => AdminKYCDetailView(kycItem: item),
+                builder: (_) => AdminKYCDetailView(kycItem: viewItem),
               ),
             );
-            if (result != null) setState(() => item.status = result.toString());
+            if (result != null) {
+              final decision = result is Map
+                  ? Map<String, dynamic>.from(result)
+                  : {'status': result.toString()};
+              try {
+                if (AdminApiService.isAdmin && int.tryParse(item.id) != null) {
+                  await AdminApiService.decideKyc(
+                    item.id,
+                    approve: decision['status'] == 'approved',
+                    reason: decision['reason']?.toString(),
+                  );
+                }
+                if (mounted)
+                  setState(() => item.status = decision['status'].toString());
+              } on AdminApiException catch (error) {
+                if (mounted)
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(error.message)));
+              }
+            }
           },
           child: Padding(
             padding: const EdgeInsets.all(16),

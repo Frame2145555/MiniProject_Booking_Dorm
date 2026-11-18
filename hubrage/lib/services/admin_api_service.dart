@@ -25,6 +25,29 @@ class AdminApiService {
   static Future<List<Map<String, dynamic>>> getSellers() async =>
       _list((await _send('GET', '/api/admin/sellers'))['data']);
 
+  static Future<List<Map<String, dynamic>>> getKycRequests({
+    String status = 'pending',
+  }) async =>
+      _list((await _send('GET', '/api/admin/kyc?status=$status'))['data']);
+
+  static Future<Map<String, dynamic>> getKycRequest(String id) async =>
+      Map<String, dynamic>.from(
+        (await _send('GET', '/api/admin/kyc/$id'))['data'] as Map,
+      );
+
+  static Future<void> decideKyc(
+    String id, {
+    required bool approve,
+    String? reason,
+  }) => _send(
+    'PATCH',
+    '/api/admin/kyc/$id',
+    body: {
+      'status': approve ? 'approved' : 'rejected',
+      if (!approve) 'rejection_reason': reason,
+    },
+  );
+
   /// รายชื่อผู้ใช้ทุกประเภท (ไม่รวมบัญชีแอดมิน)
   static Future<List<Map<String, dynamic>>> getUsers() async =>
       _list((await _send('GET', '/api/admin/users'))['data']);

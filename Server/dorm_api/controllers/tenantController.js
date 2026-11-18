@@ -17,6 +17,10 @@ exports.getDorms = async (req, res) => {
         d.cover_image_url AS imageUrl,
         d.latitude,
         d.longitude,
+        EXISTS (
+          SELECT 1 FROM kyc_requests k
+          WHERE k.seller_id = d.owner_id AND k.status = 'approved'
+        ) AS verified_owner,
         COALESCE(fav.is_fav, 0) AS isFavorite
       FROM dorms d
       LEFT JOIN (
@@ -109,6 +113,10 @@ exports.getDormById = async (req, res) => {
         d.longitude,
         d.listing_status,
         d.approval_status,
+        EXISTS (
+          SELECT 1 FROM kyc_requests k
+          WHERE k.seller_id = d.owner_id AND k.status = 'approved'
+        ) AS verified_owner,
         COALESCE(fav.is_fav, 0) AS isFavorite
        FROM dorms d
        LEFT JOIN (

@@ -146,6 +146,7 @@ function buildQuery(opts) {
 
   const inner = `SELECT d.id, d.name, d.address, d.description, d.price_min_month, d.price_max_month,
       d.cover_image_url, d.latitude, d.longitude, d.phone, d.created_at,
+      EXISTS (SELECT 1 FROM kyc_requests k WHERE k.seller_id = d.owner_id AND k.status = 'approved') AS verified_owner,
       COALESCE(v.views, 0) AS view_count,
       (SELECT COUNT(*) FROM rooms r WHERE r.dorm_id = d.id AND r.status = 'available') AS available_rooms${distanceSelect}
     FROM dorms d
@@ -186,6 +187,9 @@ function toDormJson(r, tags) {
     longitude: r.longitude === null || r.longitude === undefined ? null : Number(r.longitude),
     rating: null,
     tags: tags || [],
+    // ส่งสถานะ KYC ของเจ้าของไปให้ Flutter แสดงเครื่องหมาย Verified
+    // (ค่า EXISTS จาก MySQL อาจเป็น 0/1 จึงแปลงเป็น boolean ให้แน่นอน)
+    verified_owner: Boolean(r.verified_owner),
     view_count: Number(r.view_count ?? 0),
     available_rooms: Number(r.available_rooms ?? 0),
     ...(r.distance_km !== undefined && { distance_km: r.distance_km === null ? null : Math.round(r.distance_km * 100) / 100 }),
@@ -238,6 +242,7 @@ module.exports = function createSearch(db) {
     const [rows] = await db.query(
       `SELECT d.id, d.name, d.address, d.description, d.price_min_month, d.price_max_month,
               d.cover_image_url, d.latitude, d.longitude, d.phone, d.created_at, 0 AS view_count,
+              EXISTS (SELECT 1 FROM kyc_requests k WHERE k.seller_id = d.owner_id AND k.status = 'approved') AS verified_owner,
               (SELECT COUNT(*) FROM rooms r WHERE r.dorm_id = d.id AND r.status = 'available') AS available_rooms
        FROM dorms d ${VISIBLE_JOIN} WHERE d.id = ? AND ${VISIBLE_WHERE}`,
       [id]

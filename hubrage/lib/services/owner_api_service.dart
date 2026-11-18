@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'auth_service.dart';
@@ -40,6 +41,31 @@ class OwnerApiService {
 
   static Future<Map<String, dynamic>> getDashboardStats() =>
       _send('GET', '/api/owner/dashboard/stats');
+
+  static Future<Map<String, dynamic>?> getKyc() async {
+    final data = (await _send('GET', '/api/owner/kyc'))['data'];
+    return data is Map ? Map<String, dynamic>.from(data) : null;
+  }
+
+  static Future<Map<String, dynamic>> submitKyc({
+    required String fullName,
+    required String phone,
+    required String email,
+    required String idCardNumber,
+    required String idCardImage,
+    String? selfieImage,
+  }) => _send(
+    'POST',
+    '/api/owner/kyc',
+    body: {
+      'idCardNumber': idCardNumber,
+      'fullName': fullName,
+      'phone': phone,
+      'email': email,
+      'idCardImage': idCardImage,
+      if (selfieImage != null) 'selfieImage': selfieImage,
+    },
+  );
 
   static Future<List<Map<String, dynamic>>> getDorms() async {
     final response = await _send('GET', '/api/owner/dorms');
@@ -150,6 +176,11 @@ class OwnerApiService {
     }
 
     try {
+      debugPrint(
+        '[OWNER API DEBUG] request $method $uri '
+        'auth=${authenticated && _token.isNotEmpty} '
+        'bodyBytes=${body == null ? 0 : utf8.encode(jsonEncode(body)).length}',
+      );
       final request = switch (method) {
         'GET' => http.get(uri, headers: headers),
         'POST' => http.post(uri, headers: headers, body: jsonEncode(body)),
@@ -165,8 +196,13 @@ class OwnerApiService {
         throw const OwnerApiException('เซิร์ฟเวอร์ตอบกลับข้อมูลไม่ถูกต้อง');
       }
       final data = Map<String, dynamic>.from(decoded);
+      debugPrint('[OWNER API DEBUG] $method $path -> ${response.statusCode}');
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint(
+          '[OWNER API DEBUG] response: ${data['error'] ?? data['message'] ?? data}',
+        );
         if (response.statusCode == 401) logout();
+        debugPrint('[OWNER API DEBUG] debugId: ${data['debugId'] ?? '-'}');
         throw OwnerApiException(
           (data['message'] ?? data['error'])?.toString() ??
               'เรียกใช้ระบบเจ้าของหอไม่สำเร็จ (${response.statusCode})',
@@ -176,6 +212,7 @@ class OwnerApiService {
     } on OwnerApiException {
       rethrow;
     } catch (error) {
+      debugPrint('[OWNER API ERROR] $method $uri -> $error');
       throw OwnerApiException(
         'เชื่อมต่อ ${OwnerApiConfig.baseUrl} ไม่สำเร็จ: $error',
       );

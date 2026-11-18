@@ -58,6 +58,11 @@ module.exports = (db, auth) => {
     res.json({ success: true, count: rows.length, data: rows });
   });
 
+  // KYC review: admins can inspect the submitted identity data and decide once.
+  router.get("/kyc", controller.getKycRequests);
+  router.get("/kyc/:id", controller.getKycRequest);
+  router.patch("/kyc/:id", controller.decideKycRequest);
+
   router.get("/reports", async (req, res) => {
     const status = String(req.query.status || "pending");
     const statuses = ["pending", "resolved", "dismissed"];

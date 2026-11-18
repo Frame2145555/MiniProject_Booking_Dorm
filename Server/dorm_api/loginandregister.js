@@ -93,6 +93,7 @@ module.exports = function createAuth(db, options = {}) {
     role: u.role,
     full_name: u.full_name,
     email: u.email,
+    verified_owner: Boolean(u.verified_owner),
   });
 
   // ---------- middleware ----------
@@ -166,7 +167,9 @@ module.exports = function createAuth(db, options = {}) {
     }
 
     const [rows] = await db.query(
-      "SELECT id, email, password, full_name, role, account_status FROM users WHERE email = ? LIMIT 1",
+      `SELECT u.id, u.email, u.password, u.full_name, u.role, u.account_status,
+              EXISTS (SELECT 1 FROM kyc_requests k WHERE k.seller_id = u.id AND k.status = 'approved') AS verified_owner
+         FROM users u WHERE u.email = ? LIMIT 1`,
       [email]
     );
     const user = rows[0];
