@@ -103,12 +103,15 @@ exports.getOwnerDorms = async (req, res) => {
           room_number AS roomNumber,
           room_type AS roomType,
           price_per_month AS price,
+          floor,
           status
-         FROM rooms WHERE dorm_id = ? ORDER BY room_number ASC`,
+         FROM rooms WHERE dorm_id = ? ORDER BY floor ASC, room_number ASC`,
         [dorm.id]
       );
       dorm.roomsList = rooms;
     }
+
+    try { await require('../dorm_images_routes').attach(db, dorms); } catch (e) { console.error('dorm images:', e.message); } // รูปเพิ่มเติม (ถ้าพลาดไม่ให้หน้าหลักพัง)
 
     res.json({ success: true, count: dorms.length, data: dorms });
   } catch (err) {

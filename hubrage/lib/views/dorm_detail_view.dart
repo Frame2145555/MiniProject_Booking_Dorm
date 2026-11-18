@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/services.dart';
 
 import '../models/admin_console_state.dart';
@@ -539,10 +540,19 @@ class _DormDetailViewState extends State<DormDetailView> {
               fit: StackFit.expand,
               children: [
                 if (_galleryImages.isNotEmpty)
-                  PageView.builder(
-                    itemCount: _galleryImages.length,
-                    onPageChanged: (i) => setState(() => _heroPage = i),
-                    itemBuilder: (_, i) => DormGalleryImage(_galleryImages[i]),
+                  ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(context).copyWith(
+                      dragDevices: {
+                        PointerDeviceKind.touch,
+                        PointerDeviceKind.mouse,
+                        PointerDeviceKind.trackpad,
+                      },
+                    ),
+                    child: PageView.builder(
+                      itemCount: _galleryImages.length,
+                      onPageChanged: (i) => setState(() => _heroPage = i),
+                      itemBuilder: (_, i) => DormGalleryImage(_galleryImages[i]),
+                    ),
                   )
                 else
                 Center(
@@ -565,16 +575,18 @@ class _DormDetailViewState extends State<DormDetailView> {
                     ],
                   ),
                 ),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      stops: const [0.5, 1],
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withOpacity(0.65),
-                      ],
+                IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: const [0.5, 1],
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.65),
+                        ],
+                      ),
                     ),
                   ),
                 ),

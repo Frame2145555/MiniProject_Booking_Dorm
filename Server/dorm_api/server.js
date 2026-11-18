@@ -28,7 +28,12 @@ const auth = require("./loginandregister")(db, { jwtSecret: appCfg.jwt_secret })
 app.use("/api", auth.router);                                  // POST /api/register, /api/login · GET /api/me
 app.use("/api", require("./searchandsort")(db));               // GET /api/dorms, /api/dorms/:id, /api/amenities
 app.use("/api", require("./chat_routes")(pool, auth.verifyToken)); // /api/conversations ... (แชท)
-app.use("/api/owner", require("./owner_booking_routes")(db, auth)); // จอง/นัด ฝั่งเจ้าของหอ (ส่วนเสริม ต้องมาก่อนของพี่)
+app.use("/api/owner", require("./owner_booking_routes")(db, auth));
+app.use("/api/notifications", require("./notification_routes")(db, auth));
+app.use("/api/owner", require("./owner_room_routes")(db, auth));
+app.use("/api/owner", require("./owner_revenue_routes")(db, auth));
+app.use("/uploads/dorms", express.static(require("path").join(__dirname, "uploads", "dorms")));
+app.use("/api/owner", require("./dorm_images_routes")(db, auth));
 app.use("/api/owner", require("./Troutes/ownerRoutes"));       // ระบบเจ้าของหอ (ของพี่): /api/owner/...
 // หน้า list/รายละเอียดหอเปิดดูได้โดยไม่ login แต่ถ้าแนบ token มา ให้รู้ว่าใครดู (isFavorite / ยอดวิว)
 const jwt = require("jsonwebtoken");
@@ -81,7 +86,11 @@ require("./chat_socket").setupChatSocket(io, pool);
 
 const PORT = appCfg.port || 3000;
 // สร้างตารางของระบบจอง (ถ้ายังไม่มี) ก่อนเปิดรับ request -> ไม่ต้อง import SQL เอง
+require("./dorm_images_routes")
+  .ensureSchema(pool)
+  .catch((err) => console.error("สร้างตาราง dorm_images ไม่สำเร็จ:", err.message));
 Promise.all([bookingPayment.ensureSchema(pool), reports.ensureSchema(), reviews.ensureSchema()])
+  .then(() => require("./notification_routes").ensureSchema(pool))
   .catch((err) => console.error("สร้างตารางระบบจอง/รายงาน/รีวิวไม่สำเร็จ:", err.message))
   .finally(() => httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

@@ -167,6 +167,7 @@ class _OwnerReservationsViewState extends State<OwnerReservationsView> {
                       ReservationCard(
                         reservation: r,
                         showTenant: true,
+                        showDeposit: true,
                         actions: r.status != ReservationStatus.approved
                             ? const []
                             : _controller.busy.contains(r.id)

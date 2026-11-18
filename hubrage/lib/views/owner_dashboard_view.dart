@@ -1,11 +1,15 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
 import '../models/admin_console_state.dart';
 import '../models/dorm_model.dart';
 import '../services/owner_api_service.dart';
 import '../services/session.dart';
 import '../theme/app_theme.dart';
 import '../widgets/dorm_gallery.dart';
+import '../widgets/owner_revenue_section.dart';
 
 class OwnerDashboardView extends StatefulWidget {
   final AdminConsoleState consoleState;
@@ -26,6 +30,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
   Map<String, dynamic> _dashboardStats = {};
   List<Map<String, dynamic>> _visitRequests = [];
   List<Map<String, dynamic>> _bookings = []; // คำขอจองห้องจากผู้เช่า
+  int _revenueTick = 0; // เพิ่มทุกครั้งที่โหลดข้อมูลใหม่ -> ให้ส่วนรายได้โหลดตาม
   final List<Map<String, dynamic>> _myDorms = [];
 
   bool get _sellerSuspended => _dashboardStats['account_status'] == 'suspended';
@@ -105,6 +110,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
             (results[2] as Map<String, dynamic>)['data']
                 as List<Map<String, dynamic>>;
         _bookings = results[3] as List<Map<String, dynamic>>;
+        _revenueTick++;
       });
     } on OwnerApiException catch (error) {
       if (mounted) setState(() => _loadError = error.message);
@@ -122,6 +128,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
         roomNumber: room['roomNumber']?.toString() ?? '',
         roomType: room['roomType']?.toString() ?? '',
         price: double.tryParse(room['price'].toString()) ?? 0,
+        floor: int.tryParse('${room['floor']}') ?? 1,
         status: _roomStatusToLabel(room['status']?.toString() ?? ''),
       );
     }).toList();
@@ -139,7 +146,8 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
       'imageUrl': dorm['imageUrl']?.toString() ?? '',
       'amenities': List<String>.from(dorm['amenities'] as List? ?? const []),
       'roomsList': rooms,
-      'images': <dynamic>[],
+      // รูปเพิ่มเติมที่บันทึกไว้บน server (ลิงก์ http หรือ /uploads/...)
+      'images': List<dynamic>.from(dorm['images'] as List? ?? const []),
     };
   }
 
@@ -267,13 +275,17 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
     final maxPriceController = TextEditingController(
       text: dorm['priceMax']?.toString() ?? '',
     );
-    final imageController = TextEditingController(
-      text: dorm['imageUrl']?.toString() ?? '',
+    // รูปหน้าปก: null = ไม่มีรูป | String = รูปเดิม | Uint8List = รูปที่เพิ่งเลือกจากเครื่อง
+    final existingCover = dorm['imageUrl']?.toString() ?? '';
+    final coverImage = ValueNotifier<dynamic>(
+      existingCover.isEmpty ? null : existingCover,
     );
     // สำเนารูปเพิ่มเติม: แก้ไขได้อิสระ แล้วค่อยบันทึกกลับเมื่อกด "บันทึก"
     final galleryImages = List<dynamic>.from(
       (dorm['images'] as List?) ?? const [],
     );
+    final dialogError = ValueNotifier<String?>(null); // ข้อความผิดพลาดในฟอร์ม (SnackBar ถูกหน้าต่างบัง)
+    final saving = ValueNotifier<bool>(false);
 
     showDialog<void>(
       context: context,
@@ -286,6 +298,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
           ],
         ),
         content: SingleChildScrollView(
+          padding: const EdgeInsets.only(top: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -310,6 +323,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 maxLines: 3,
                 decoration: AppInputs.field(labelText: 'รายละเอียดหอพัก'),
               ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
@@ -336,12 +350,27 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 ],
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: imageController,
-                decoration: AppInputs.field(labelText: 'URL รูปหน้าปก'),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: DormCoverEditor(cover: coverImage),
               ),
               const SizedBox(height: 16),
               DormGalleryEditor(images: galleryImages),
+              ValueListenableBuilder<String?>(
+                valueListenable: dialogError,
+                builder: (_, message, __) => message == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text(
+                          message,
+                          style: const TextStyle(
+                            color: AppColors.danger,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+              ),
             ],
           ),
         ),
@@ -350,65 +379,93 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text('ยกเลิก'),
           ),
-          ElevatedButton(
-            onPressed: () async {
-              if (titleController.text.trim().isEmpty ||
-                  addressController.text.trim().isEmpty ||
-                  phoneController.text.trim().isEmpty ||
-                  descriptionController.text.trim().isEmpty ||
-                  int.tryParse(minPriceController.text) == null ||
-                  int.tryParse(maxPriceController.text) == null ||
-                  int.parse(maxPriceController.text) <
-                      int.parse(minPriceController.text)) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('กรุณากรอกรายละเอียดและช่วงราคาให้ครบ'),
-                  ),
-                );
-                return;
-              }
-              try {
-                await OwnerApiService.updateDorm(dorm['id'].toString(), {
-                  'title': titleController.text.trim(),
-                  'location': addressController.text.trim(),
-                  'phone': phoneController.text.trim(),
-                  'description': descriptionController.text.trim(),
-                  'priceMin': int.parse(minPriceController.text),
-                  'priceMax': int.parse(maxPriceController.text),
-                  'imageUrl': imageController.text.trim(),
-                });
-              } on OwnerApiException catch (error) {
-                if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(error.message)));
-                }
-                return;
-              }
-              await _loadOwnerData();
-              if (!mounted || !dialogContext.mounted) return;
-              Navigator.pop(dialogContext);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('อัปเดตข้อมูลหอพักแล้ว')),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.ink,
-              foregroundColor: Colors.white,
+          ValueListenableBuilder<bool>(
+            valueListenable: saving,
+            builder: (builderContext, busy, _) => ElevatedButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      dialogError.value = null;
+                      if (titleController.text.trim().isEmpty ||
+                          addressController.text.trim().isEmpty ||
+                          phoneController.text.trim().isEmpty ||
+                          descriptionController.text.trim().isEmpty ||
+                          int.tryParse(minPriceController.text) == null ||
+                          int.tryParse(maxPriceController.text) == null ||
+                          int.parse(maxPriceController.text) <
+                              int.parse(minPriceController.text)) {
+                        dialogError.value =
+                            'กรุณากรอกรายละเอียดและช่วงราคาให้ครบ';
+                        return;
+                      }
+                      saving.value = true;
+                      final dormId = dorm['id'].toString();
+                      try {
+                        // รูปหน้าปก: ถ้าเลือกรูปใหม่จากเครื่อง ให้อัปโหลดก่อน แล้วเก็บเป็น path บน server
+                        var coverUrl = '';
+                        final cover = coverImage.value;
+                        if (cover != null && !(cover is String && cover.isEmpty)) {
+                          coverUrl = (await _uploadGallery(dormId, [cover])).first;
+                        }
+                        await OwnerApiService.updateDorm(dormId, {
+                          'title': titleController.text.trim(),
+                          'location': addressController.text.trim(),
+                          'phone': phoneController.text.trim(),
+                          'description': descriptionController.text.trim(),
+                          'priceMin': int.parse(minPriceController.text),
+                          'priceMax': int.parse(maxPriceController.text),
+                          'imageUrl': coverUrl,
+                        });
+                        // รูปเพิ่มเติม: อัปโหลดรูปจากเครื่อง แล้วบันทึกรายการรูปทั้งหมด
+                        final urls = await _uploadGallery(dormId, galleryImages);
+                        await OwnerApiService.setDormImages(dormId, urls);
+                      } on OwnerApiException catch (error) {
+                        dialogError.value = error.message;
+                        saving.value = false;
+                        return;
+                      } catch (error) {
+                        dialogError.value = 'บันทึกไม่สำเร็จ: $error';
+                        saving.value = false;
+                        return;
+                      }
+                      await _loadOwnerData();
+                      saving.value = false;
+                      if (!mounted || !dialogContext.mounted) return;
+                      Navigator.pop(dialogContext);
+                      ScaffoldMessenger.of(this.context).showSnackBar(
+                        const SnackBar(content: Text('อัปเดตข้อมูลหอพักแล้ว')),
+                      );
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.ink,
+                foregroundColor: Colors.white,
+              ),
+              child: Text(busy ? 'กำลังบันทึก...' : 'บันทึก'),
             ),
-            child: const Text('บันทึก'),
           ),
         ],
       ),
-    ).then((_) {
-      titleController.dispose();
-      addressController.dispose();
-      phoneController.dispose();
-      descriptionController.dispose();
-      minPriceController.dispose();
-      maxPriceController.dispose();
-      imageController.dispose();
-    });
+    );
+  }
+
+  /// เตรียมรายการรูปเพิ่มเติมก่อนบันทึก: รูปที่เลือกจากเครื่อง (ไบต์ / blob) อัปโหลดขึ้น server
+  /// ส่วนลิงก์ (http / /uploads) ใช้ต่อได้เลย -> คืนรายการ url สุดท้ายตามลำดับเดิม
+  Future<List<String>> _uploadGallery(String dormId, List<dynamic> items) async {
+    final urls = <String>[];
+    for (final item in items) {
+      if (item is Uint8List) {
+        urls.add(await OwnerApiService.uploadDormImage(dormId, item));
+        continue;
+      }
+      final text = item.toString();
+      if (text.startsWith('blob:')) {
+        final bytes = await http.readBytes(Uri.parse(text));
+        urls.add(await OwnerApiService.uploadDormImage(dormId, bytes));
+      } else {
+        urls.add(text);
+      }
+    }
+    return urls;
   }
 
   Future<void> _pickDormDocument({
@@ -768,8 +825,9 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 final phone = phoneCtrl.text.trim();
                 final description = descriptionCtrl.text.trim();
                 final imageUrl = imageUrlCtrl.text.trim();
+                var galleryFailed = false;
                 try {
-                  await OwnerApiService.createDorm({
+                  final newDormId = await OwnerApiService.createDorm({
                     'title': title,
                     'location': location,
                     'phone': phone,
@@ -789,6 +847,21 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                             })
                         .toList(),
                   });
+                  // รูปเพิ่มเติม: อัปโหลดหลังสร้างหอสำเร็จ (ถ้าพลาดไม่ให้หอที่สร้างแล้วหาย)
+                  if (newDormId != null && galleryImages.isNotEmpty) {
+                    try {
+                      final urls = await _uploadGallery(
+                        newDormId.toString(),
+                        galleryImages,
+                      );
+                      await OwnerApiService.setDormImages(
+                        newDormId.toString(),
+                        urls,
+                      );
+                    } catch (_) {
+                      galleryFailed = true;
+                    }
+                  }
                   await _loadOwnerData();
                 } on OwnerApiException catch (error) {
                   if (context.mounted) {
@@ -802,9 +875,11 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 if (!mounted || !dialogContext.mounted) return;
                 Navigator.pop(dialogContext);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
+                  SnackBar(
                     content: Text(
-                      'ส่งข้อมูลหอพักแล้ว และรอแอดมินตรวจอนุมัติก่อนแสดงต่อผู้เช่า',
+                      galleryFailed
+                          ? 'ส่งข้อมูลหอพักแล้ว แต่อัปโหลดรูปเพิ่มเติมไม่สำเร็จ ลองกดแก้ไขประกาศเพื่อเพิ่มรูปอีกครั้ง'
+                          : 'ส่งข้อมูลหอพักแล้ว และรอแอดมินตรวจอนุมัติก่อนแสดงต่อผู้เช่า',
                     ),
                   ),
                 );
@@ -956,13 +1031,27 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                                               ),
                                             ),
                                             Text(
-                                              'ค่าเช่า: ฿${room.price.toStringAsFixed(0)} / เดือน',
+                                              'ชั้น ${room.floor} • ค่าเช่า: ฿${room.price.toStringAsFixed(0)} / เดือน',
                                               style: const TextStyle(
                                                 fontSize: 12,
                                                 color: AppColors.muted,
                                               ),
                                             ),
                                           ],
+                                        ),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'แก้ไขข้อมูลห้อง',
+                                        icon: const Icon(
+                                          Icons.edit_outlined,
+                                          size: 20,
+                                        ),
+                                        color: AppColors.muted,
+                                        onPressed: () => _showEditRoomDialog(
+                                          room,
+                                          rooms,
+                                          idx,
+                                          setModalState,
                                         ),
                                       ),
                                       // 3. ปรับแก้เรื่องห้องว่างไม่ว่าง (Dropdown เลือกสถานะห้องได้ทันที)
@@ -1055,6 +1144,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
           roomNumber: room.roomNumber,
           roomType: room.roomType,
           price: room.price,
+          floor: room.floor,
           status: status,
         );
       });
@@ -1066,6 +1156,281 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
         ).showSnackBar(SnackBar(content: Text(error.message)));
       }
     }
+  }
+
+  // 4. Dialog แก้ไขข้อมูลห้อง (เลขห้อง / ประเภท / ราคา) -- สถานะห้องแก้ที่ Dropdown ในแถวห้อง
+  void _showEditRoomDialog(
+    RoomDetailModel room,
+    List<RoomDetailModel> rooms,
+    int index,
+    void Function(void Function()) setModalState,
+  ) {
+    if (_sellerSuspended) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('บัญชีถูกระงับ จึงแก้ไขห้องไม่ได้')),
+      );
+      return;
+    }
+    if (room.id == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('ไม่พบรหัสห้องจากระบบ')));
+      return;
+    }
+    final roomNumCtrl = TextEditingController(text: room.roomNumber);
+    final priceCtrl = TextEditingController(
+      text: room.price.toStringAsFixed(0),
+    );
+    // ถ้าประเภทเดิมไม่อยู่ในรายการ ให้เพิ่มเข้าไป ไม่งั้น Dropdown จะ error
+    final roomTypes = <String>[
+      'เตียง 5 ฟุต',
+      'เตียง 6 ฟุต (VIP)',
+      'ห้องสตูดิโอ',
+      'ห้องสูท 2 ห้องนอน',
+    ];
+    if (room.roomType.isNotEmpty && !roomTypes.contains(room.roomType)) {
+      roomTypes.add(room.roomType);
+    }
+    String roomType = room.roomType.isEmpty ? roomTypes.first : room.roomType;
+    String? errorMsg;
+    bool saving = false;
+    // ชั้นที่มีอยู่แล้วในหอนี้ (เลือกได้) + ตัวเลือก "เพิ่มชั้นใหม่" (-1)
+    final floors = (rooms.map((r) => r.floor).toSet()..add(room.floor)).toList()
+      ..sort();
+    int floorChoice = room.floor;
+    final newFloorCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Text('แก้ไขห้อง ${room.roomNumber}'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: roomNumCtrl,
+                    decoration: AppInputs.field(labelText: 'เลขห้อง *'),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: roomType,
+                    decoration: AppInputs.field(labelText: 'ประเภทห้อง'),
+                    items: roomTypes
+                        .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) setDialogState(() => roomType = val);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: priceCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: AppInputs.field(
+                      labelText: 'ราคาค่าเช่า (บาท/เดือน) *',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<int>(
+                    value: floorChoice,
+                    decoration: AppInputs.field(labelText: 'ชั้น'),
+                    items: [
+                      for (final f in floors)
+                        DropdownMenuItem(value: f, child: Text('ชั้น $f')),
+                      const DropdownMenuItem(
+                        value: -1,
+                        child: Text('+ เพิ่มชั้นใหม่'),
+                      ),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) setDialogState(() => floorChoice = val);
+                    },
+                  ),
+                  if (floorChoice == -1) ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: newFloorCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: AppInputs.field(
+                        labelText: 'เลขชั้นใหม่ * (เช่น 4)',
+                      ),
+                    ),
+                  ],
+                  if (errorMsg != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      errorMsg!,
+                      style: const TextStyle(
+                        color: AppColors.danger,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (c) => AlertDialog(
+                                  title: Text('ลบห้อง ${room.roomNumber}?'),
+                                  content: const Text(
+                                    'การลบไม่สามารถย้อนกลับได้',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(c, false),
+                                      child: const Text('ยกเลิก'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () => Navigator.pop(c, true),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.danger,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                      child: const Text('ลบห้อง'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirmed != true) return;
+                              setDialogState(() {
+                                saving = true;
+                                errorMsg = null;
+                              });
+                              try {
+                                await OwnerApiService.deleteRoom(
+                                  room.id.toString(),
+                                );
+                              } on OwnerApiException catch (error) {
+                                setDialogState(() {
+                                  saving = false;
+                                  errorMsg = error.message;
+                                });
+                                return;
+                              } catch (error) {
+                                setDialogState(() {
+                                  saving = false;
+                                  errorMsg = 'ลบไม่สำเร็จ: $error';
+                                });
+                                return;
+                              }
+                              setModalState(() {
+                                rooms.removeWhere((r) => r.id == room.id);
+                              });
+                              if (mounted) setState(() {});
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              if (mounted) {
+                                ScaffoldMessenger.of(this.context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('ลบห้อง ${room.roomNumber} แล้ว'),
+                                  ),
+                                );
+                              }
+                            },
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                      label: const Text('ลบห้องนี้'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.danger,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('ยกเลิก'),
+              ),
+              ElevatedButton(
+                onPressed: saving
+                    ? null
+                    : () async {
+                        void fail(String message) =>
+                            setDialogState(() => errorMsg = message);
+                        final roomNumber = roomNumCtrl.text.trim();
+                        final price = int.tryParse(priceCtrl.text.trim());
+                        if (roomNumber.isEmpty) {
+                          fail('กรุณาระบุเลขห้อง');
+                          return;
+                        }
+                        if (price == null || price <= 0) {
+                          fail('ค่าเช่าต้องเป็นจำนวนเต็มมากกว่า 0 บาท');
+                          return;
+                        }
+                        final floor = floorChoice == -1
+                            ? int.tryParse(newFloorCtrl.text.trim())
+                            : floorChoice;
+                        if (floor == null || floor < 1 || floor > 200) {
+                          fail('กรุณาระบุเลขชั้น 1-200');
+                          return;
+                        }
+                        if (rooms.any(
+                          (r) => r.id != room.id && r.roomNumber == roomNumber,
+                        )) {
+                          fail('เลขห้องนี้มีอยู่แล้ว');
+                          return;
+                        }
+                        setDialogState(() {
+                          saving = true;
+                          errorMsg = null;
+                        });
+                        try {
+                          await OwnerApiService.updateRoom(room.id.toString(), {
+                            'roomNumber': roomNumber,
+                            'roomType': roomType,
+                            'price': price,
+                            'floor': floor,
+                          });
+                        } on OwnerApiException catch (error) {
+                          setDialogState(() {
+                            saving = false;
+                            errorMsg = error.message;
+                          });
+                          return;
+                        } catch (error) {
+                          setDialogState(() {
+                            saving = false;
+                            errorMsg = 'บันทึกไม่สำเร็จ: $error';
+                          });
+                          return;
+                        }
+                        setModalState(() {
+                          rooms[index] = RoomDetailModel(
+                            id: room.id,
+                            roomNumber: roomNumber,
+                            roomType: roomType,
+                            price: price.toDouble(),
+                            floor: floor,
+                            status: room.status,
+                          );
+                        });
+                        if (mounted) setState(() {});
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (mounted) {
+                          ScaffoldMessenger.of(this.context).showSnackBar(
+                            SnackBar(content: Text('แก้ไขห้อง $roomNumber แล้ว')),
+                          );
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.ink,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('บันทึก'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   // 2. Dialog สำหรับการเพิ่มห้องใหม่ลงในหอพัก
@@ -1085,6 +1450,18 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
     final priceCtrl = TextEditingController();
     String roomType = 'เตียง 5 ฟุต';
     String status = 'ว่าง';
+    // ชั้นที่มีอยู่แล้วในหอนี้ (เลือกได้) + ตัวเลือก "เพิ่มชั้นใหม่" (-1)
+    final floors =
+        (dorm['roomsList'] as List<RoomDetailModel>)
+            .map((r) => r.floor)
+            .toSet()
+            .toList()
+          ..sort();
+    if (floors.isEmpty) floors.add(1);
+    int floorChoice = floors.last;
+    final newFloorCtrl = TextEditingController();
+    String? errorMsg; // ข้อความผิดพลาดแสดงในฟอร์ม (SnackBar จะถูกหน้าต่างบังอยู่)
+    bool saving = false;
 
     showDialog(
       context: context,
@@ -1130,6 +1507,32 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                     ),
                   ),
                   const SizedBox(height: 10),
+                  DropdownButtonFormField<int>(
+                    value: floorChoice,
+                    decoration: AppInputs.field(labelText: 'ชั้น'),
+                    items: [
+                      for (final f in floors)
+                        DropdownMenuItem(value: f, child: Text('ชั้น $f')),
+                      const DropdownMenuItem(
+                        value: -1,
+                        child: Text('+ เพิ่มชั้นใหม่'),
+                      ),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) setDialogState(() => floorChoice = val);
+                    },
+                  ),
+                  if (floorChoice == -1) ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: newFloorCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: AppInputs.field(
+                        labelText: 'เลขชั้นใหม่ * (เช่น 4)',
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     value: status,
                     decoration: AppInputs.field(labelText: 'สถานะห้องเริ่มต้น'),
@@ -1140,6 +1543,16 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                       if (val != null) setDialogState(() => status = val);
                     },
                   ),
+                  if (errorMsg != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      errorMsg!,
+                      style: const TextStyle(
+                        color: AppColors.danger,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1149,69 +1562,89 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 child: const Text('ยกเลิก'),
               ),
               ElevatedButton(
-                onPressed: () async {
-                  if (roomNumCtrl.text.isNotEmpty) {
-                    final parsedPrice = double.tryParse(priceCtrl.text);
-                    if (parsedPrice == null || parsedPrice <= 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('กรุณาระบุค่าเช่ามากกว่า 0 บาท'),
-                        ),
-                      );
-                      return;
-                    }
-                    final rooms = dorm['roomsList'] as List<RoomDetailModel>;
-                    final roomNumber = roomNumCtrl.text.trim();
-                    if (rooms.any((room) => room.roomNumber == roomNumber)) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('เลขห้องนี้มีอยู่แล้ว')),
-                      );
-                      return;
-                    }
-                    try {
-                      final response = await OwnerApiService.createRoom(
-                        dorm['id'].toString(),
-                        {
-                          'roomNumber': roomNumber,
-                          'roomType': roomType,
-                          'price': parsedPrice,
-                          'status': status,
-                        },
-                      );
-                      final createdRoom =
-                          response['data'] as Map<String, dynamic>;
-                      rooms.add(
-                        RoomDetailModel(
-                          id: int.tryParse(createdRoom['id'].toString()),
-                          roomNumber: createdRoom['roomNumber'].toString(),
-                          roomType: createdRoom['roomType'].toString(),
-                          price:
-                              double.tryParse(
-                                createdRoom['price'].toString(),
-                              ) ??
-                              parsedPrice,
-                          status: _roomStatusToLabel(
-                            createdRoom['status'].toString(),
-                          ),
-                        ),
-                      );
-                    } on OwnerApiException catch (error) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(SnackBar(content: Text(error.message)));
-                      }
-                      return;
-                    }
-                    if (!context.mounted) return;
-                    if (!mounted || !ctx.mounted) return;
-                    onAdded();
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('เพิ่มห้อง $roomNumber แล้ว')),
-                    );
-                  }
-                },
+                onPressed: saving
+                    ? null
+                    : () async {
+                        void fail(String message) =>
+                            setDialogState(() => errorMsg = message);
+                        final roomNumber = roomNumCtrl.text.trim();
+                        if (roomNumber.isEmpty) {
+                          fail('กรุณาระบุเลขห้อง');
+                          return;
+                        }
+                        final parsedPrice = double.tryParse(
+                          priceCtrl.text.trim(),
+                        );
+                        if (parsedPrice == null || parsedPrice <= 0) {
+                          fail('กรุณาระบุค่าเช่ามากกว่า 0 บาท');
+                          return;
+                        }
+                        final floor = floorChoice == -1
+                            ? int.tryParse(newFloorCtrl.text.trim())
+                            : floorChoice;
+                        if (floor == null || floor < 1 || floor > 200) {
+                          fail('กรุณาระบุเลขชั้น 1-200');
+                          return;
+                        }
+                        final rooms = dorm['roomsList'] as List<RoomDetailModel>;
+                        if (rooms.any((room) => room.roomNumber == roomNumber)) {
+                          fail('เลขห้องนี้มีอยู่แล้ว');
+                          return;
+                        }
+                        setDialogState(() {
+                          saving = true;
+                          errorMsg = null;
+                        });
+                        try {
+                          final response = await OwnerApiService.createRoom(
+                            dorm['id'].toString(),
+                            {
+                              'roomNumber': roomNumber,
+                              'roomType': roomType,
+                              'price': parsedPrice,
+                              'floor': floor,
+                              'status': status,
+                            },
+                          );
+                          final createdRoom =
+                              response['data'] as Map<String, dynamic>;
+                          rooms.add(
+                            RoomDetailModel(
+                              id: int.tryParse(createdRoom['id'].toString()),
+                              roomNumber: createdRoom['roomNumber'].toString(),
+                              roomType: createdRoom['roomType'].toString(),
+                              price:
+                                  double.tryParse(
+                                    createdRoom['price'].toString(),
+                                  ) ??
+                                  parsedPrice,
+                              floor: floor,
+                              status: _roomStatusToLabel(
+                                createdRoom['status'].toString(),
+                              ),
+                            ),
+                          );
+                        } on OwnerApiException catch (error) {
+                          setDialogState(() {
+                            saving = false;
+                            errorMsg = error.message;
+                          });
+                          return;
+                        } catch (error) {
+                          setDialogState(() {
+                            saving = false;
+                            errorMsg = 'บันทึกไม่สำเร็จ: $error';
+                          });
+                          return;
+                        }
+                        onAdded();
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (mounted) {
+                          ScaffoldMessenger.of(this.context).showSnackBar(
+                            SnackBar(content: Text('เพิ่มห้อง $roomNumber แล้ว')),
+                          );
+                        }
+                      },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.ink,
                   foregroundColor: Colors.white,
@@ -1855,7 +2288,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
               children: [
                 imgUrl.isNotEmpty
                     ? Image.network(
-                        imgUrl,
+                        resolveImageUrl(imgUrl),
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => placeholder,
                       )
@@ -2333,6 +2766,12 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
               const SizedBox(height: 16),
               if (_sellerSuspended) _buildSuspendedBanner(),
               _buildSubscriptionCard(),
+              const SizedBox(height: 24),
+              _sectionHeader(
+                'รายได้',
+                subtitle: 'นับจากการจองที่คุณกดยืนยันแล้ว',
+              ),
+              OwnerRevenueSection(reloadKey: _revenueTick),
               const SizedBox(height: 24),
               _sectionHeader(
                 'รายการหอพักของคุณ',
