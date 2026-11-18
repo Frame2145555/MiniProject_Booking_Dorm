@@ -136,8 +136,9 @@ module.exports = (db, paymentHelpers = {}) => {
       }
       const [rows] = await db.query(`
         SELECT k.id, k.seller_id AS sellerId, u.full_name AS sellerName,
-               u.email AS sellerEmail, u.phone AS sellerPhone, k.dorm_name AS dormName,
-               k.status, k.submitted_at AS submittedAt, k.reviewed_by AS reviewedBy,
+               u.email AS sellerEmail, u.phone AS sellerPhone, k.id_card_number AS idCardNumber,
+               k.dorm_name AS dormName,
+                  k.status, k.submitted_at AS submittedAt, k.reviewed_by AS reviewedBy,
                reviewer.full_name AS reviewerName, k.reviewed_at AS reviewedAt,
                k.rejection_reason AS rejectionReason, COUNT(DISTINCT d.id) AS documentCount
           FROM kyc_requests k
@@ -145,7 +146,7 @@ module.exports = (db, paymentHelpers = {}) => {
           LEFT JOIN users reviewer ON reviewer.id = k.reviewed_by
           LEFT JOIN kyc_documents d ON d.kyc_request_id = k.id
           ${status === "all" ? "" : "WHERE k.status = ?"}
-         GROUP BY k.id, k.seller_id, u.full_name, u.email, u.phone, k.dorm_name,
+         GROUP BY k.id, k.seller_id, u.full_name, u.email, u.phone, k.id_card_number, k.dorm_name,
                   k.status, k.submitted_at, k.reviewed_by, reviewer.full_name,
                   k.reviewed_at, k.rejection_reason
          ORDER BY k.submitted_at DESC, k.id DESC`,
@@ -159,7 +160,8 @@ module.exports = (db, paymentHelpers = {}) => {
       if (!id) return fail(res, 400, "id ไม่ถูกต้อง");
       const [rows] = await db.query(`
         SELECT k.id, k.seller_id AS sellerId, u.full_name AS sellerName,
-               u.email AS sellerEmail, u.phone AS sellerPhone, k.dorm_name AS dormName,
+               u.email AS sellerEmail, u.phone AS sellerPhone, k.id_card_number AS idCardNumber,
+               k.dorm_name AS dormName,
                k.status, k.submitted_at AS submittedAt, k.reviewed_by AS reviewedBy,
                reviewer.full_name AS reviewerName, k.reviewed_at AS reviewedAt,
                k.rejection_reason AS rejectionReason
@@ -168,7 +170,8 @@ module.exports = (db, paymentHelpers = {}) => {
          WHERE k.id = ? LIMIT 1`, [id]);
       if (!rows.length) return fail(res, 404, "ไม่พบคำขอ KYC นี้");
       const [documents] = await db.query(`
-        SELECT id, document_type AS documentType, uploaded_at AS uploadedAt
+        SELECT id, document_type AS documentType, file_data AS fileData,
+               watermark_text AS watermarkText, uploaded_at AS uploadedAt
           FROM kyc_documents WHERE kyc_request_id = ? ORDER BY uploaded_at, id`, [id]);
       res.json({ success: true, data: { ...rows[0], documents } });
     },

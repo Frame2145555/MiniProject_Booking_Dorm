@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/kyc_request_model.dart';
 import '../theme/app_theme.dart';
@@ -10,9 +12,7 @@ class AdminKYCDetailView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('รายละเอียดคำขอ KYC'),
-      ),
+      appBar: AppBar(title: const Text('รายละเอียดคำขอ KYC')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -21,29 +21,46 @@ class AdminKYCDetailView extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: kycItem.status == 'pending' ? AppColors.warningSoft : AppColors.successSoft,
+                color: kycItem.status == 'pending'
+                    ? AppColors.warningSoft
+                    : AppColors.successSoft,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: kycItem.status == 'pending' ? AppColors.warning.withOpacity(0.35) : AppColors.success.withOpacity(0.35)),
+                border: Border.all(
+                  color: kycItem.status == 'pending'
+                      ? AppColors.warning.withOpacity(0.35)
+                      : AppColors.success.withOpacity(0.35),
+                ),
               ),
               child: Row(
                 children: [
                   Icon(
-                    kycItem.status == 'pending' ? Icons.info_outline : Icons.verified,
-                    color: kycItem.status == 'pending' ? AppColors.warning : AppColors.success,
+                    kycItem.status == 'pending'
+                        ? Icons.info_outline
+                        : Icons.verified,
+                    color: kycItem.status == 'pending'
+                        ? AppColors.warning
+                        : AppColors.success,
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    kycItem.status == 'pending' ? 'สถานะ: รอการตรวจสอบเอกสาร' : 'สถานะ: อนุมัติการยืนยันตัวตนแล้ว',
+                    kycItem.status == 'pending'
+                        ? 'สถานะ: รอการตรวจสอบเอกสาร'
+                        : 'สถานะ: อนุมัติการยืนยันตัวตนแล้ว',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: kycItem.status == 'pending' ? AppColors.warning : AppColors.success,
+                      color: kycItem.status == 'pending'
+                          ? AppColors.warning
+                          : AppColors.success,
                     ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
-            const Text('ข้อมูลผู้ยื่นคำขอ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text(
+              'ข้อมูลผู้ยื่นคำขอ',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 10),
             AppCard(
               child: Padding(
@@ -54,19 +71,28 @@ class AdminKYCDetailView extends StatelessWidget {
                     const Divider(height: 16),
                     _buildDetailRow('ชื่อหอพักที่ลงทะเบียน:', kycItem.dormName),
                     const Divider(height: 16),
-                    _buildDetailRow('เลขประจำตัวประชาชน:', kycItem.idCardNumber),
+                    _buildDetailRow(
+                      'เลขประจำตัวประชาชน:',
+                      kycItem.idCardNumber,
+                    ),
                     const Divider(height: 16),
                     _buildDetailRow('เบอร์โทรศัพท์:', kycItem.phone),
                     const Divider(height: 16),
                     _buildDetailRow('อีเมล:', kycItem.email),
                     const Divider(height: 16),
-                    _buildDetailRow('วันที่ยื่นเอกสาร:', kycItem.submissionDate),
+                    _buildDetailRow(
+                      'วันที่ยื่นเอกสาร:',
+                      kycItem.submissionDate,
+                    ),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 20),
-            const Text('รูปถ่ายบัตรประชาชน (พร้อม Watermark)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text(
+              'รูปถ่ายบัตรประชาชน (พร้อม Watermark)',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 10),
             Container(
               height: 200,
@@ -82,37 +108,116 @@ class AdminKYCDetailView extends StatelessWidget {
                   Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.badge_outlined, size: 60, color: AppColors.muted),
+                      if (kycItem.idCardImage != null)
+                        Image.memory(
+                          _decodeImage(kycItem.idCardImage!),
+                          height: 150,
+                          fit: BoxFit.contain,
+                        )
+                      else
+                        const Icon(
+                          Icons.badge_outlined,
+                          size: 60,
+                          color: AppColors.muted,
+                        ),
                       const SizedBox(height: 6),
-                      Text('รูปถ่ายบัตรประชาชน: ${kycItem.sellerName}', style: const TextStyle(color: AppColors.muted)),
+                      Text(
+                        'รูปถ่ายบัตรประชาชน: ${kycItem.sellerName}',
+                        style: const TextStyle(color: AppColors.muted),
+                      ),
                     ],
                   ),
                   Transform.rotate(
                     angle: -0.2,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.danger.withOpacity(0.15),
-                        border: Border.all(color: AppColors.danger.withOpacity(0.5), width: 2),
+                        border: Border.all(
+                          color: AppColors.danger.withOpacity(0.5),
+                          width: 2,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Text(
                         'ใช้สำหรับตรวจสอบสิทธิ์ DORM MASTER เท่านั้น',
-                        style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.bold, fontSize: 12),
+                        style: TextStyle(
+                          color: AppColors.danger,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
+            if (kycItem.selfieImage != null) ...[
+              const SizedBox(height: 20),
+              const Text(
+                'รูปเซลฟี่คู่บัตรประชาชน',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              AppCard(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Image.memory(
+                    _decodeImage(kycItem.selfieImage!),
+                    height: 220,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 28),
             if (kycItem.status == 'pending') ...[
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () {
-                        Navigator.pop(context, 'rejected');
+                      onPressed: () async {
+                        final reason = await showDialog<String>(
+                          context: context,
+                          builder: (context) {
+                            final controller = TextEditingController();
+                            return AlertDialog(
+                              title: const Text('ระบุเหตุผลที่ปฏิเสธ'),
+                              content: TextField(
+                                controller: controller,
+                                maxLines: 3,
+                                decoration: const InputDecoration(
+                                  hintText:
+                                      'เช่น รูปไม่ชัด หรือข้อมูลไม่ตรงกัน',
+                                ),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text('ยกเลิก'),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () {
+                                    if (controller.text.trim().isNotEmpty)
+                                      Navigator.pop(
+                                        context,
+                                        controller.text.trim(),
+                                      );
+                                  },
+                                  child: const Text('ยืนยัน'),
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                        if (reason != null && context.mounted)
+                          Navigator.pop(context, {
+                            'status': 'rejected',
+                            'reason': reason,
+                          });
                       },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.danger,
@@ -126,7 +231,7 @@ class AdminKYCDetailView extends StatelessWidget {
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () {
-                        Navigator.pop(context, 'approved');
+                        Navigator.pop(context, {'status': 'approved'});
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.success,
@@ -157,9 +262,20 @@ class AdminKYCDetailView extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: AppColors.muted, fontSize: 13)),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+        Text(
+          label,
+          style: const TextStyle(color: AppColors.muted, fontSize: 13),
+        ),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        ),
       ],
     );
+  }
+
+  static Uint8List _decodeImage(String dataUrl) {
+    final comma = dataUrl.indexOf(',');
+    return base64Decode(comma >= 0 ? dataUrl.substring(comma + 1) : dataUrl);
   }
 }

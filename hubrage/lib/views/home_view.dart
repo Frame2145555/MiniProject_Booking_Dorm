@@ -86,7 +86,10 @@ class HomeView extends StatelessWidget {
                       leading: const Icon(Icons.cloud_off_outlined),
                       title: const Text(
                         'แสดงหอตัวอย่าง (ต่อ server ไม่ได้)',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       subtitle: Text(
                         DormCatalog.live.error!,
@@ -113,8 +116,13 @@ class HomeView extends StatelessWidget {
                   delegate: SliverChildBuilderDelegate((context, index) {
                     final dorm = dorms[index];
                     final title = dorm['title'].toString();
+                    final verifiedOwner =
+                        dorm['verified_owner'] == true ||
+                        dorm['verified_owner'] == 1 ||
+                        dorm['verified_owner']?.toString() == '1';
+                    final cardDorm = {...dorm, 'verified_owner': verifiedOwner};
                     return DormCard(
-                      dorm: dorm,
+                      dorm: cardDorm,
                       isFavorite: favorites.isFavorite(title),
                       onToggleFavorite: () => favorites.toggle(title),
                       onTap: () => openDormDetail(
@@ -188,7 +196,8 @@ class _HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
     final range = maxExtent - minExtent;
     final t = (shrinkOffset / range).clamp(0.0, 1.0);
     // คำทักทายจางเร็วกว่าการยุบ เพื่อให้ดูนุ่มนวลไม่ซ้อนกับช่องค้นหา
-    final heroOpacity = (1 - Curves.easeIn.transform((t * 1.35).clamp(0.0, 1.0)));
+    final heroOpacity =
+        (1 - Curves.easeIn.transform((t * 1.35).clamp(0.0, 1.0)));
 
     return Container(
       decoration: BoxDecoration(

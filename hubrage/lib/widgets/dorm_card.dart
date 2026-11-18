@@ -49,6 +49,10 @@ class DormCard extends StatelessWidget {
     final rating = dorm['rating']?.toString();
     final imageUrl = dorm['imageUrl']?.toString() ?? '';
     final gradient = AppGradients.coverFor(title);
+    final verifiedOwner =
+        dorm['verified_owner'] == true ||
+        dorm['verified_owner'] == 1 ||
+        dorm['verified_owner']?.toString() == '1';
 
     final Widget placeholder = DecoratedBox(
       decoration: BoxDecoration(gradient: gradient),
@@ -181,15 +185,32 @@ class DormCard extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              if (verifiedOwner) ...[
+                                const SizedBox(width: 6),
+                                const Tooltip(
+                                  message: 'ยืนยันตัวตนแล้ว (Verified Owner)',
+                                  child: Icon(
+                                    Icons.verified,
+                                    size: 19,
+                                    color: Color(0xFF8FF0B5),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           const SizedBox(height: 4),
                           Row(

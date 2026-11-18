@@ -51,7 +51,9 @@ class _AuthViewState extends State<AuthView> {
   }
 
   void _toast(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _login() async {
@@ -105,139 +107,158 @@ class _AuthViewState extends State<AuthView> {
         prefixIcon: icon == null ? null : Icon(icon, color: AppColors.muted),
       );
 
-  Widget _primaryButton(String label, {VoidCallback? onPressed, bool loading = false}) =>
-      SizedBox(
-        width: double.infinity,
-        height: 56,
-        child: ElevatedButton(
-          onPressed: loading ? null : onPressed,
-          style: ElevatedButton.styleFrom(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          ),
-          child: loading
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                )
-              : Text(
-                  label,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                ),
-        ),
-      );
+  Widget _primaryButton(
+    String label, {
+    VoidCallback? onPressed,
+    bool loading = false,
+  }) => SizedBox(
+    width: double.infinity,
+    height: 56,
+    child: ElevatedButton(
+      onPressed: loading ? null : onPressed,
+      style: ElevatedButton.styleFrom(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      child: loading
+          ? const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : Text(
+              label,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+    ),
+  );
 
   /// แถบสลับ เข้าสู่ระบบ / สมัครสมาชิก
   Widget _tabPill() => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-        child: Container(
-          height: 52,
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: AppShadows.soft,
-          ),
-          child: TabBar(
-            dividerColor: Colors.transparent,
-            indicatorSize: TabBarIndicatorSize.tab,
-            indicator: BoxDecoration(
-              color: AppColors.ink,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: AppShadows.dark,
-            ),
-            labelColor: Colors.white,
-            unselectedLabelColor: AppColors.ink,
-            labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-            unselectedLabelStyle: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-            tabs: const [Tab(text: 'เข้าสู่ระบบ'), Tab(text: 'สมัครสมาชิก')],
-          ),
+    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+    child: Container(
+      height: 52,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: AppShadows.soft,
+      ),
+      child: TabBar(
+        dividerColor: Colors.transparent,
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicator: BoxDecoration(
+          color: AppColors.ink,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: AppShadows.dark,
         ),
-      );
+        labelColor: Colors.white,
+        unselectedLabelColor: AppColors.ink,
+        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
+        tabs: const [
+          Tab(text: 'เข้าสู่ระบบ'),
+          Tab(text: 'สมัครสมาชิก'),
+        ],
+      ),
+    ),
+  );
 
   Widget _loginForm() => Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 96,
-            height: 96,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: AppShadows.soft,
-            ),
-            child: const Icon(
-              Icons.person_rounded,
-              size: 52,
-              color: AppColors.ink,
-            ),
-          ),
-          const SizedBox(height: 28),
-          TextField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            decoration: _decoration('อีเมล', icon: Icons.email_outlined),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _passwordController,
-            obscureText: true,
-            onSubmitted: (_) => _login(),
-            decoration: _decoration('รหัสผ่าน (Password)', icon: Icons.lock_outline),
-          ),
-          const SizedBox(height: 24),
-          _primaryButton('เข้าสู่ระบบ', onPressed: _login, loading: _loading),
-        ],
-      );
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      Container(
+        width: 96,
+        height: 96,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: AppShadows.soft,
+        ),
+        child: const Icon(Icons.person_rounded, size: 52, color: AppColors.ink),
+      ),
+      const SizedBox(height: 28),
+      TextField(
+        controller: _emailController,
+        keyboardType: TextInputType.emailAddress,
+        decoration: _decoration('อีเมล', icon: Icons.email_outlined),
+      ),
+      const SizedBox(height: 14),
+      TextField(
+        controller: _passwordController,
+        obscureText: true,
+        onSubmitted: (_) => _login(),
+        decoration: _decoration(
+          'รหัสผ่าน (Password)',
+          icon: Icons.lock_outline,
+        ),
+      ),
+      const SizedBox(height: 24),
+      _primaryButton('เข้าสู่ระบบ', onPressed: _login, loading: _loading),
+    ],
+  );
 
   Widget _loggedInCard() => Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          ChatAvatar(name: Session.fullName, size: 96),
-          const SizedBox(height: 16),
-          Text(
-            Session.fullName,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 8),
-          StatusPill(
-            'เข้าสู่ระบบเป็น ${_roleLabel(Session.role)}',
-            icon: Icons.verified_user_rounded,
-            color: AppColors.success,
-            background: AppColors.successSoft,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'user id ${Session.userId}',
-            style: const TextStyle(fontSize: 12, color: AppColors.muted),
-          ),
-          const SizedBox(height: 28),
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: OutlinedButton.icon(
-              onPressed: _logout,
-              icon: const Icon(Icons.logout_rounded),
-              label: const Text('ออกจากระบบ'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.danger,
-                side: const BorderSide(color: AppColors.danger),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              ),
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      ChatAvatar(name: Session.fullName, size: 96),
+      const SizedBox(height: 16),
+      Text(
+        Session.fullName,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+      ),
+      const SizedBox(height: 8),
+      StatusPill(
+        'เข้าสู่ระบบเป็น ${_roleLabel(Session.role)}',
+        icon: Icons.verified_user_rounded,
+        color: AppColors.success,
+        background: AppColors.successSoft,
+      ),
+      if (Session.role == 'seller' && Session.verifiedOwner) ...[
+        const SizedBox(height: 8),
+        const StatusPill(
+          'ยืนยันตัวตนแล้ว (Verified Owner)',
+          icon: Icons.verified,
+          color: AppColors.success,
+          background: AppColors.successSoft,
+        ),
+      ],
+      const SizedBox(height: 6),
+      Text(
+        'user id ${Session.userId}',
+        style: const TextStyle(fontSize: 12, color: AppColors.muted),
+      ),
+      const SizedBox(height: 28),
+      SizedBox(
+        width: double.infinity,
+        height: 56,
+        child: OutlinedButton.icon(
+          onPressed: _logout,
+          icon: const Icon(Icons.logout_rounded),
+          label: const Text('ออกจากระบบ'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.danger,
+            side: const BorderSide(color: AppColors.danger),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
             ),
           ),
-        ],
-      );
+        ),
+      ),
+    ],
+  );
 
   Future<void> _register(TabController? tabs) async {
-    final fullName = [_firstNameController.text, _lastNameController.text]
-        .map((t) => t.trim())
-        .where((t) => t.isNotEmpty)
-        .join(' ');
+    final fullName = [
+      _firstNameController.text,
+      _lastNameController.text,
+    ].map((t) => t.trim()).where((t) => t.isNotEmpty).join(' ');
     final email = _regEmailController.text.trim();
     final password = _regPasswordController.text;
     if (fullName.isEmpty || email.isEmpty || password.isEmpty) {
@@ -295,7 +316,11 @@ class _AuthViewState extends State<AuthView> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 18, color: selected ? Colors.white : AppColors.ink),
+              Icon(
+                icon,
+                size: 18,
+                color: selected ? Colors.white : AppColors.ink,
+              ),
               const SizedBox(width: 6),
               Text(
                 label,
@@ -313,80 +338,80 @@ class _AuthViewState extends State<AuthView> {
   }
 
   Widget _registerForm() => Padding(
-        padding: const EdgeInsets.all(24),
-        child: SingleChildScrollView(
-          child: Builder(
-            // Builder: เพื่อเข้าถึง TabController ของ DefaultTabController ที่อยู่ด้านบน
-            builder: (tabContext) => Column(
+    padding: const EdgeInsets.all(24),
+    child: SingleChildScrollView(
+      child: Builder(
+        // Builder: เพื่อเข้าถึง TabController ของ DefaultTabController ที่อยู่ด้านบน
+        builder: (tabContext) => Column(
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    _roleChip('tenant', 'ผู้เช่า', Icons.person_search_rounded),
-                    const SizedBox(width: 10),
-                    _roleChip('seller', 'เจ้าของหอ', Icons.storefront_rounded),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _firstNameController,
-                  textInputAction: TextInputAction.next,
-                  decoration: _decoration('ชื่อจริง (First Name)'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _lastNameController,
-                  textInputAction: TextInputAction.next,
-                  decoration: _decoration('นามสกุล (Last Name)'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  textInputAction: TextInputAction.next,
-                  decoration: _decoration('เบอร์โทรศัพท์ (Phone) — ไม่บังคับ'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _regEmailController,
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
-                  decoration: _decoration('อีเมล (E-mail)'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _regPasswordController,
-                  obscureText: true,
-                  onSubmitted: (_) =>
-                      _register(DefaultTabController.maybeOf(tabContext)),
-                  decoration: _decoration('รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)'),
-                ),
-                const SizedBox(height: 24),
-                _primaryButton(
-                  'ยืนยันสมัครสมาชิก',
-                  loading: _registering,
-                  onPressed: () =>
-                      _register(DefaultTabController.maybeOf(tabContext)),
-                ),
+                _roleChip('tenant', 'ผู้เช่า', Icons.person_search_rounded),
+                const SizedBox(width: 10),
+                _roleChip('seller', 'เจ้าของหอ', Icons.storefront_rounded),
               ],
             ),
-          ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _firstNameController,
+              textInputAction: TextInputAction.next,
+              decoration: _decoration('ชื่อจริง (First Name)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _lastNameController,
+              textInputAction: TextInputAction.next,
+              decoration: _decoration('นามสกุล (Last Name)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.next,
+              decoration: _decoration('เบอร์โทรศัพท์ (Phone) — ไม่บังคับ'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _regEmailController,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              decoration: _decoration('อีเมล (E-mail)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _regPasswordController,
+              obscureText: true,
+              onSubmitted: (_) =>
+                  _register(DefaultTabController.maybeOf(tabContext)),
+              decoration: _decoration('รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)'),
+            ),
+            const SizedBox(height: 24),
+            _primaryButton(
+              'ยืนยันสมัครสมาชิก',
+              loading: _registering,
+              onPressed: () =>
+                  _register(DefaultTabController.maybeOf(tabContext)),
+            ),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 
   Widget _tabViews() => TabBarView(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(24),
-            // login/logout จากหน้าไหนก็ตาม -> แท็บนี้เปลี่ยนตามเอง
-            child: ValueListenableBuilder<bool>(
-              valueListenable: Session.loggedIn,
-              builder: (context, _, __) =>
-                  Session.isLoggedIn ? _loggedInCard() : _loginForm(),
-            ),
-          ),
-          _registerForm(),
-        ],
-      );
+    children: [
+      Padding(
+        padding: const EdgeInsets.all(24),
+        // login/logout จากหน้าไหนก็ตาม -> แท็บนี้เปลี่ยนตามเอง
+        child: ValueListenableBuilder<bool>(
+          valueListenable: Session.loggedIn,
+          builder: (context, _, __) =>
+              Session.isLoggedIn ? _loggedInCard() : _loginForm(),
+        ),
+      ),
+      _registerForm(),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {

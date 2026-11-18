@@ -90,7 +90,8 @@ const paymentRef = () => {
 
 /** สร้างตาราง (sql/booking_payment.sql) ตอนเปิด server — รันซ้ำได้ */
 const ensureSchema = async (pool) => {
-  const sql = fs.readFileSync(path.join(__dirname, "sql", "booking_payment.sql"), "utf8");
+  // This file is in Server/dorm_api/sql, while this module is in Server/dorm_api/routes.
+  const sql = fs.readFileSync(path.join(__dirname, "..", "sql", "booking_payment.sql"), "utf8");
   const statements = sql
     .split(/;\s*(?:\r?\n|$)/)
     .map((s) => s.replace(/^\s*--.*$/gm, "").trim())

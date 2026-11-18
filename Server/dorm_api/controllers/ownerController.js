@@ -6,7 +6,9 @@ exports.getDashboardStats = async (req, res) => {
     const ownerId = req.user.id;
 
     const [userRows] = await db.query(
-      'SELECT account_status FROM users WHERE id = ?',
+      `SELECT u.account_status,
+              EXISTS (SELECT 1 FROM kyc_requests k WHERE k.seller_id = u.id AND k.status = 'approved') AS verified_owner
+         FROM users u WHERE u.id = ?`,
       [ownerId]
     );
 
@@ -38,6 +40,7 @@ exports.getDashboardStats = async (req, res) => {
       success: true,
       data: {
         account_status: userRows[0]?.account_status || 'active',
+        verified_owner: Boolean(userRows[0]?.verified_owner),
         total_views: statsRows[0].total_views || 0,
         pending_dorms_count: statsRows[0].pending_dorms_count || 0,
         active_dorms_count: statsRows[0].active_dorms_count || 0,

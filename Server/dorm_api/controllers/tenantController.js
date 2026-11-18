@@ -21,6 +21,10 @@ exports.getDorms = async (req, res) => {
           WHERE dorm_id = d.id AND status = 'visible') AS rating,
         (SELECT COUNT(*) FROM dorm_reviews
           WHERE dorm_id = d.id AND status = 'visible') AS reviewCount,
+        EXISTS (
+          SELECT 1 FROM kyc_requests k
+          WHERE k.seller_id = d.owner_id AND k.status = 'approved'
+        ) AS verified_owner,
         COALESCE(fav.is_fav, 0) AS isFavorite
       FROM dorms d
       LEFT JOIN (
@@ -116,6 +120,10 @@ exports.getDormById = async (req, res) => {
           WHERE dorm_id = d.id AND status = 'visible') AS reviewCount,
         d.listing_status,
         d.approval_status,
+        EXISTS (
+          SELECT 1 FROM kyc_requests k
+          WHERE k.seller_id = d.owner_id AND k.status = 'approved'
+        ) AS verified_owner,
         COALESCE(fav.is_fav, 0) AS isFavorite
        FROM dorms d
        LEFT JOIN (

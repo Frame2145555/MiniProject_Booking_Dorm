@@ -32,7 +32,8 @@ class AuthService {
 
     if (res.statusCode == 401) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
     if (res.statusCode == 403) return 'บัญชีนี้ถูกระงับ';
-    if (res.statusCode == 429) return 'ลองเข้าสู่ระบบผิดหลายครั้งเกินไป รอสักครู่แล้วลองใหม่';
+    if (res.statusCode == 429)
+      return 'ลองเข้าสู่ระบบผิดหลายครั้งเกินไป รอสักครู่แล้วลองใหม่';
     if (res.statusCode != 200) {
       return 'เข้าสู่ระบบไม่สำเร็จ (${res.statusCode}) ที่ ${ApiConfig.baseUrl}/api/login';
     }
@@ -43,8 +44,10 @@ class AuthService {
     Session.userId = data['id'];
     Session.role = data['role'];
     Session.fullName = data['full_name'] ?? '';
+    Session.verifiedOwner = data['verified_owner'] == true;
 
-    if (connectSocket) ChatService.instance.connect(); // ต่อ socket ก่อน แล้วค่อยแจ้งหน้าอื่น
+    if (connectSocket)
+      ChatService.instance.connect(); // ต่อ socket ก่อน แล้วค่อยแจ้งหน้าอื่น
     Session.loggedIn.value = true; // หน้าแชท/บัญชีที่ฟังอยู่จะอัปเดตเอง
     return null;
   }
@@ -93,7 +96,8 @@ class AuthService {
     String? serverMessage;
     try {
       final data = jsonDecode(res.body);
-      if (data is Map) serverMessage = (data['error'] ?? data['message'])?.toString();
+      if (data is Map)
+        serverMessage = (data['error'] ?? data['message'])?.toString();
     } catch (_) {}
     if (serverMessage != null && serverMessage.isNotEmpty) return serverMessage;
 
