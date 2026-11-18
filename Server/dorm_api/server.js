@@ -43,7 +43,8 @@ const optionalUser = (req, res, next) => {
   next();
 };
 app.use("/api/tenant", optionalUser, require("./Troutes/tenantRoutes")); // ระบบค้นหา/จอง (ของพี่): /api/tenant/...
-app.use("/api/admin", require("./admin_routes")(db, auth));    // ระบบแอดมิน: อนุมัติหอ / ระงับบัญชี
+const adminRoutes = require("./admin_routes");
+app.use("/api/admin", adminRoutes(db, auth));                 // ระบบแอดมิน: อนุมัติหอ / ระงับบัญชี
 // ระบบรายงานหอพัก: Tenant ส่งรายงาน -> Admin ตรวจสอบและเปลี่ยนสถานะ
 const reports = require("./report_routes")(db, auth);
 app.use("/api/tenant/reports", reports.tenantRouter);
@@ -81,7 +82,7 @@ require("./chat_socket").setupChatSocket(io, pool);
 
 const PORT = appCfg.port || 3000;
 // สร้างตารางของระบบจอง (ถ้ายังไม่มี) ก่อนเปิดรับ request -> ไม่ต้อง import SQL เอง
-Promise.all([bookingPayment.ensureSchema(pool), reports.ensureSchema(), reviews.ensureSchema()])
+Promise.all([bookingPayment.ensureSchema(pool), reports.ensureSchema(), reviews.ensureSchema(), adminRoutes.ensureSchema(db)])
   .catch((err) => console.error("สร้างตารางระบบจอง/รายงาน/รีวิวไม่สำเร็จ:", err.message))
   .finally(() => httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
