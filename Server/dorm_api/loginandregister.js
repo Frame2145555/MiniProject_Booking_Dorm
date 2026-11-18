@@ -93,6 +93,7 @@ module.exports = function createAuth(db, options = {}) {
     role: u.role,
     full_name: u.full_name,
     email: u.email,
+    phone: u.phone || "",
     verified_owner: Boolean(u.verified_owner),
   });
 
@@ -108,13 +109,13 @@ module.exports = function createAuth(db, options = {}) {
     }
     // ดึงสถานะล่าสุดจาก DB → ถูกระงับ/เปลี่ยน role แล้วมีผลทันที ไม่ต้องรอ token หมดอายุ
     const [rows] = await db.query(
-      "SELECT id, email, full_name, role, account_status FROM users WHERE id = ? LIMIT 1",
+      "SELECT id, email, full_name, phone, role, account_status FROM users WHERE id = ? LIMIT 1",
       [payload.id]
     );
     const u = rows[0];
     if (!u) return res.status(401).json({ error: "ไม่พบบัญชีนี้" });
     if (u.account_status !== "active") return res.status(403).json({ error: "บัญชีนี้ถูกระงับ" });
-    req.user = { id: u.id, email: u.email, full_name: u.full_name, role: u.role };
+    req.user = { id: u.id, email: u.email, full_name: u.full_name, phone: u.phone || "", role: u.role };
     next();
   }
 
@@ -145,7 +146,7 @@ module.exports = function createAuth(db, options = {}) {
         [value.email, hash, value.fullName, value.phone, value.role]
       );
       res.status(201).json(
-        sessionOf({ id: r.insertId, role: value.role, full_name: value.fullName, email: value.email })
+        sessionOf({ id: r.insertId, role: value.role, full_name: value.fullName, email: value.email, phone: value.phone })
       );
     } catch (e) {
       if (e && e.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "อีเมลนี้ถูกใช้งานแล้ว" });
@@ -167,7 +168,7 @@ module.exports = function createAuth(db, options = {}) {
     }
 
     const [rows] = await db.query(
-      `SELECT u.id, u.email, u.password, u.full_name, u.role, u.account_status,
+      `SELECT u.id, u.email, u.password, u.full_name, u.phone, u.role, u.account_status,
               EXISTS (SELECT 1 FROM kyc_requests k WHERE k.seller_id = u.id AND k.status = 'approved') AS verified_owner
          FROM users u WHERE u.email = ? LIMIT 1`,
       [email]
@@ -192,6 +193,31 @@ module.exports = function createAuth(db, options = {}) {
   });
 
   router.get("/me", verifyToken, (req, res) => res.json(req.user));
+
+  router.put("/me", verifyToken, async (req, res) => {
+    const fullName = typeof req.body?.full_name === "string"
+      ? req.body.full_name.trim().replace(/\s+/g, " ") : "";
+    const phone = typeof req.body?.phone === "string" ? req.body.phone.trim() : "";
+    const email = normalizeEmail(req.body?.email);
+    if (!fullName || fullName.length > 150) {
+      return res.status(400).json({ error: "กรุณากรอกชื่อ (ไม่เกิน 150 ตัวอักษร)" });
+    }
+    if (phone && !PHONE_RE.test(phone)) {
+      return res.status(400).json({ error: "รูปแบบเบอร์โทรศัพท์ไม่ถูกต้อง" });
+    }
+    if (!email || email.length > 254 || !EMAIL_RE.test(email)) {
+      return res.status(400).json({ error: "รูปแบบอีเมลไม่ถูกต้อง" });
+    }
+    try {
+      await db.query("UPDATE users SET full_name = ?, phone = ?, email = ? WHERE id = ?", [
+        fullName, phone || null, email, req.user.id,
+      ]);
+    } catch (e) {
+      if (e?.code === "ER_DUP_ENTRY") return res.status(409).json({ error: "อีเมลนี้ถูกใช้งานแล้ว" });
+      throw e;
+    }
+    res.json({ ...req.user, full_name: fullName, phone, email });
+  });
 
   return { router, verifyToken, requireRole };
 };

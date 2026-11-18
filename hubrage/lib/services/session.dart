@@ -5,6 +5,8 @@ class Session {
   static int userId = 0;
   static String role = '';
   static String fullName = '';
+  static String email = '';
+  static String phone = '';
   static bool verifiedOwner = false;
   static bool get isLoggedIn => token.isNotEmpty;
 
@@ -17,6 +19,8 @@ class Session {
     userId = 0;
     role = '';
     fullName = '';
+    email = '';
+    phone = '';
     verifiedOwner = false;
     loggedIn.value = false;
   }

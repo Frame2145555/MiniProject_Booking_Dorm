@@ -6,7 +6,7 @@ import 'views/home_view.dart';
 import 'views/search_view.dart';
 import 'views/favorites_view.dart';
 import 'views/chat_view.dart';
-import 'views/auth_view.dart';
+import 'views/profile_view.dart';
 import 'views/owner_dashboard_view.dart';
 import 'views/admin_dashboard_view.dart';
 import 'views/my_bookings_view.dart';
@@ -60,15 +60,16 @@ class _NavigationShellState extends State<NavigationShell> {
         onGoSearch: () => _selectTab(1),
       ),
       const ChatView(embedded: true),
+      const ProfileView(embedded: true),
     ],
     UserRole.seller: [
       OwnerDashboardView(consoleState: _consoleState),
       const ChatView(embedded: true, asSeller: true),
-      const AuthView(embedded: true),
+      const ProfileView(embedded: true),
     ],
     UserRole.admin: [
       AdminDashboardView(consoleState: _consoleState),
-      const AuthView(embedded: true),
+      const ProfileView(embedded: true),
     ],
   };
 
@@ -167,7 +168,7 @@ class _NavigationShellState extends State<NavigationShell> {
   void _openAccount() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const AuthView()),
+      MaterialPageRoute(builder: (_) => const ProfileView()),
     );
   }
 
@@ -546,6 +547,11 @@ class _NavigationShellState extends State<NavigationShell> {
             icon: Icon(Icons.forum_outlined),
             activeIcon: Icon(Icons.forum_rounded),
             label: 'แชท',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline_rounded),
+            activeIcon: Icon(Icons.person_rounded),
+            label: 'โปรไฟล์',
           ),
         ];
       case UserRole.seller:

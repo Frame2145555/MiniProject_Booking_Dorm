@@ -44,6 +44,8 @@ class AuthService {
     Session.userId = data['id'];
     Session.role = data['role'];
     Session.fullName = data['full_name'] ?? '';
+    Session.email = data['email'] ?? '';
+    Session.phone = data['phone'] ?? '';
     Session.verifiedOwner = data['verified_owner'] == true;
 
     if (connectSocket)
@@ -109,5 +111,40 @@ class AuthService {
   static void logout() {
     ChatService.instance.disconnect();
     Session.clear();
+  }
+
+  static Future<String?> updateProfile({
+    required String fullName,
+    required String email,
+    required String phone,
+    http.Client? client,
+  }) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/me');
+    final headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${Session.token}',
+      'ngrok-skip-browser-warning': 'true',
+    };
+    try {
+      final request = client == null
+          ? http.put(uri, headers: headers, body: jsonEncode({
+              'full_name': fullName.trim(), 'email': email.trim(), 'phone': phone.trim(),
+            }))
+          : client.put(uri, headers: headers, body: jsonEncode({
+              'full_name': fullName.trim(), 'email': email.trim(), 'phone': phone.trim(),
+            }));
+      final response = await request.timeout(const Duration(seconds: 10));
+      final data = jsonDecode(response.body);
+      if (response.statusCode != 200) {
+        return data is Map ? (data['error'] ?? 'บันทึกโปรไฟล์ไม่สำเร็จ').toString() : 'บันทึกโปรไฟล์ไม่สำเร็จ';
+      }
+      Session.fullName = data['full_name'] ?? fullName.trim();
+      Session.email = data['email'] ?? email.trim();
+      Session.phone = data['phone'] ?? phone.trim();
+      Session.loggedIn.value = true;
+      return null;
+    } catch (_) {
+      return 'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ';
+    }
   }
 }
