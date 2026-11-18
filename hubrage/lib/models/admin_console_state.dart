@@ -12,16 +12,13 @@ import 'dorm_catalog.dart';
 /// - ข้อมูลตัวอย่างมีไว้สำหรับ preview เท่านั้น; เมื่อ logout จะล้างข้อมูล Admin ออกจาก state
 /// Overview, Owner, User, Payment, Report และ Review ใช้ข้อมูลจาก Backend/MySQL เมื่อ Admin login
 class AdminConsoleState extends ChangeNotifier {
-  AdminConsoleState() {
-    _mockSellers = sellers.map((s) => Map<String, dynamic>.from(s)).toList();
-    _mockViews = Map<String, int>.from(dormViews);
-    _mockReviews = reviews.map((r) => Map<String, dynamic>.from(r)).toList();
-    Session.loggedIn.addListener(_onSessionChanged);
-    if (AdminApiService.isAdmin) {
-      loadFromServer();
-      _startReportPolling();
-    }
+AdminConsoleState() {
+  Session.loggedIn.addListener(_onSessionChanged);
+  if (AdminApiService.isAdmin) {
+    loadFromServer();
+    _startReportPolling();
   }
+}
 
   Timer? _reportsPoller;
 
@@ -40,10 +37,6 @@ class AdminConsoleState extends ChangeNotifier {
     _reportsPoller?.cancel();
     _reportsPoller = null;
   }
-
-  late final List<Map<String, dynamic>> _mockSellers;
-  late final Map<String, int> _mockViews;
-  late final List<Map<String, dynamic>> _mockReviews;
 
   /// true = ข้อมูลในหน้าแอดมินมาจาก server แล้ว
   bool serverMode = false;
