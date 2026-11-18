@@ -111,6 +111,8 @@ exports.getOwnerDorms = async (req, res) => {
       dorm.roomsList = rooms;
     }
 
+    try { await require('../dorm_images_routes').attach(db, dorms); } catch (e) { console.error('dorm images:', e.message); } // รูปเพิ่มเติม (ถ้าพลาดไม่ให้หน้าหลักพัง)
+
     res.json({ success: true, count: dorms.length, data: dorms });
   } catch (err) {
     console.error('Error in getOwnerDorms:', err);

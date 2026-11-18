@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -109,8 +110,53 @@ class OwnerApiService {
     );
   }
 
-  static Future<void> createDorm(Map<String, dynamic> dorm) async {
-    await _send('POST', '/api/owner/dorms', body: dorm);
+  /// คืนรหัสหอพักที่สร้างใหม่ (ใช้อัปโหลดรูปเพิ่มเติมต่อ)
+  static Future<int?> createDorm(Map<String, dynamic> dorm) async {
+    final response = await _send('POST', '/api/owner/dorms', body: dorm);
+    final data = response['data'];
+    return data is Map ? int.tryParse('${data['dormId']}') : null;
+  }
+
+  /// อัปโหลดรูปเพิ่มเติม 1 รูป (ไบต์ดิบ) -> คืน url แบบ /uploads/dorms/<id>/<file>
+  /// (dorm_images_routes.js: รองรับ jpg/png/webp/gif ไม่เกิน 8 MB)
+  static Future<String> uploadDormImage(String dormId, Uint8List bytes) async {
+    final uri = Uri.parse('${OwnerApiConfig.baseUrl}/api/owner/dorms/$dormId/images');
+    try {
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'ngrok-skip-browser-warning': 'true',
+              if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
+            },
+            body: bytes,
+          )
+          .timeout(const Duration(seconds: 60));
+      final decoded = response.body.isEmpty ? {} : jsonDecode(response.body);
+      final data = decoded is Map ? Map<String, dynamic>.from(decoded) : <String, dynamic>{};
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        if (response.statusCode == 401) logout();
+        throw OwnerApiException(
+          (data['message'] ?? data['error'])?.toString() ??
+              'อัปโหลดรูปไม่สำเร็จ (${response.statusCode})',
+        );
+      }
+      final url = (data['data'] is Map ? data['data']['url'] : null)?.toString();
+      if (url == null || url.isEmpty) {
+        throw const OwnerApiException('เซิร์ฟเวอร์ไม่ส่งลิงก์รูปกลับมา');
+      }
+      return url;
+    } on OwnerApiException {
+      rethrow;
+    } catch (error) {
+      throw OwnerApiException('อัปโหลดรูปไม่สำเร็จ: $error');
+    }
+  }
+
+  /// บันทึกรายการรูปเพิ่มเติมของหอ (ลำดับตามที่ส่ง สูงสุด 10) -- ลิงก์ http(s) หรือ /uploads/...
+  static Future<void> setDormImages(String dormId, List<String> urls) async {
+    await _send('PUT', '/api/owner/dorms/$dormId/images', body: {'images': urls});
   }
 
   static Future<void> updateDorm(String id, Map<String, dynamic> dorm) async {

@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import '../services/api_config.dart';
 import '../theme/app_theme.dart';
 
 /// รูปในแกลเลอรีหอพัก: เก็บเป็น String (ลิงก์รูป) หรือ Uint8List (ไฟล์ที่เลือกจากเครื่อง)
@@ -26,8 +27,10 @@ class DormGalleryImage extends StatelessWidget {
         errorBuilder: (_, __, ___) => broken,
       );
     }
+    // รูปที่อัปโหลดขึ้น server เก็บเป็น /uploads/... -> ต่อหน้า baseUrl ให้เป็นลิงก์เต็ม
+    final text = source.toString();
     return Image.network(
-      source.toString(),
+      text.startsWith('/') ? '${ApiConfig.baseUrl}$text' : text,
       fit: fit,
       errorBuilder: (_, __, ___) => broken,
     );
@@ -49,8 +52,11 @@ class DormGalleryEditor extends StatefulWidget {
 class _DormGalleryEditorState extends State<DormGalleryEditor> {
   bool get _full => widget.images.length >= widget.maxImages;
 
+  // แสดงข้อความในกล่องเลย (SnackBar จะถูกหน้าต่างฟอร์มบังอยู่ จึงมองไม่เห็น)
+  String? _message;
+
   void _toast(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    if (mounted) setState(() => _message = message);
   }
 
   /// PlatformFile ของ file_picker เวอร์ชันนี้ไม่มี getter `bytes` จึงลองอ่านทีละวิธีแบบ dynamic
@@ -80,6 +86,7 @@ class _DormGalleryEditorState extends State<DormGalleryEditor> {
 
   Future<void> _pickFromDevice() async {
     if (_full) return _toast('เพิ่มรูปได้สูงสุด ${widget.maxImages} รูป');
+    _message = null;
     try {
       // file_picker 13.3.2: pickFiles ไม่มีพารามิเตอร์ allowMultiple/withData
       // จึงเลือกทีละรูป (กดปุ่มซ้ำเพื่อเพิ่มรูปถัดไป)
@@ -104,6 +111,7 @@ class _DormGalleryEditorState extends State<DormGalleryEditor> {
 
   Future<void> _addFromLink() async {
     if (_full) return _toast('เพิ่มรูปได้สูงสุด ${widget.maxImages} รูป');
+    _message = null;
     final controller = TextEditingController();
     final url = await showDialog<String>(
       context: context,
@@ -222,6 +230,13 @@ class _DormGalleryEditorState extends State<DormGalleryEditor> {
             ),
           ],
         ),
+        if (_message != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _message!,
+            style: const TextStyle(color: AppColors.danger, fontSize: 12),
+          ),
+        ],
       ],
     );
   }

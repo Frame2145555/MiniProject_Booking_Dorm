@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
 import '../models/admin_console_state.dart';
 import '../models/dorm_model.dart';
 import '../services/owner_api_service.dart';
@@ -143,7 +146,8 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
       'imageUrl': dorm['imageUrl']?.toString() ?? '',
       'amenities': List<String>.from(dorm['amenities'] as List? ?? const []),
       'roomsList': rooms,
-      'images': <dynamic>[],
+      // รูปเพิ่มเติมที่บันทึกไว้บน server (ลิงก์ http หรือ /uploads/...)
+      'images': List<dynamic>.from(dorm['images'] as List? ?? const []),
     };
   }
 
@@ -278,6 +282,8 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
     final galleryImages = List<dynamic>.from(
       (dorm['images'] as List?) ?? const [],
     );
+    final dialogError = ValueNotifier<String?>(null); // ข้อความผิดพลาดในฟอร์ม (SnackBar ถูกหน้าต่างบัง)
+    final saving = ValueNotifier<bool>(false);
 
     showDialog<void>(
       context: context,
@@ -347,6 +353,21 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
               ),
               const SizedBox(height: 16),
               DormGalleryEditor(images: galleryImages),
+              ValueListenableBuilder<String?>(
+                valueListenable: dialogError,
+                builder: (_, message, __) => message == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text(
+                          message,
+                          style: const TextStyle(
+                            color: AppColors.danger,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+              ),
             ],
           ),
         ),
@@ -355,65 +376,87 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text('ยกเลิก'),
           ),
-          ElevatedButton(
-            onPressed: () async {
-              if (titleController.text.trim().isEmpty ||
-                  addressController.text.trim().isEmpty ||
-                  phoneController.text.trim().isEmpty ||
-                  descriptionController.text.trim().isEmpty ||
-                  int.tryParse(minPriceController.text) == null ||
-                  int.tryParse(maxPriceController.text) == null ||
-                  int.parse(maxPriceController.text) <
-                      int.parse(minPriceController.text)) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('กรุณากรอกรายละเอียดและช่วงราคาให้ครบ'),
-                  ),
-                );
-                return;
-              }
-              try {
-                await OwnerApiService.updateDorm(dorm['id'].toString(), {
-                  'title': titleController.text.trim(),
-                  'location': addressController.text.trim(),
-                  'phone': phoneController.text.trim(),
-                  'description': descriptionController.text.trim(),
-                  'priceMin': int.parse(minPriceController.text),
-                  'priceMax': int.parse(maxPriceController.text),
-                  'imageUrl': imageController.text.trim(),
-                });
-              } on OwnerApiException catch (error) {
-                if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(error.message)));
-                }
-                return;
-              }
-              await _loadOwnerData();
-              if (!mounted || !dialogContext.mounted) return;
-              Navigator.pop(dialogContext);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('อัปเดตข้อมูลหอพักแล้ว')),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.ink,
-              foregroundColor: Colors.white,
+          ValueListenableBuilder<bool>(
+            valueListenable: saving,
+            builder: (builderContext, busy, _) => ElevatedButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      dialogError.value = null;
+                      if (titleController.text.trim().isEmpty ||
+                          addressController.text.trim().isEmpty ||
+                          phoneController.text.trim().isEmpty ||
+                          descriptionController.text.trim().isEmpty ||
+                          int.tryParse(minPriceController.text) == null ||
+                          int.tryParse(maxPriceController.text) == null ||
+                          int.parse(maxPriceController.text) <
+                              int.parse(minPriceController.text)) {
+                        dialogError.value =
+                            'กรุณากรอกรายละเอียดและช่วงราคาให้ครบ';
+                        return;
+                      }
+                      saving.value = true;
+                      final dormId = dorm['id'].toString();
+                      try {
+                        await OwnerApiService.updateDorm(dormId, {
+                          'title': titleController.text.trim(),
+                          'location': addressController.text.trim(),
+                          'phone': phoneController.text.trim(),
+                          'description': descriptionController.text.trim(),
+                          'priceMin': int.parse(minPriceController.text),
+                          'priceMax': int.parse(maxPriceController.text),
+                          'imageUrl': imageController.text.trim(),
+                        });
+                        // รูปเพิ่มเติม: อัปโหลดรูปจากเครื่อง แล้วบันทึกรายการรูปทั้งหมด
+                        final urls = await _uploadGallery(dormId, galleryImages);
+                        await OwnerApiService.setDormImages(dormId, urls);
+                      } on OwnerApiException catch (error) {
+                        dialogError.value = error.message;
+                        saving.value = false;
+                        return;
+                      } catch (error) {
+                        dialogError.value = 'บันทึกไม่สำเร็จ: $error';
+                        saving.value = false;
+                        return;
+                      }
+                      await _loadOwnerData();
+                      saving.value = false;
+                      if (!mounted || !dialogContext.mounted) return;
+                      Navigator.pop(dialogContext);
+                      ScaffoldMessenger.of(this.context).showSnackBar(
+                        const SnackBar(content: Text('อัปเดตข้อมูลหอพักแล้ว')),
+                      );
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.ink,
+                foregroundColor: Colors.white,
+              ),
+              child: Text(busy ? 'กำลังบันทึก...' : 'บันทึก'),
             ),
-            child: const Text('บันทึก'),
           ),
         ],
       ),
-    ).then((_) {
-      titleController.dispose();
-      addressController.dispose();
-      phoneController.dispose();
-      descriptionController.dispose();
-      minPriceController.dispose();
-      maxPriceController.dispose();
-      imageController.dispose();
-    });
+    );
+  }
+
+  /// เตรียมรายการรูปเพิ่มเติมก่อนบันทึก: รูปที่เลือกจากเครื่อง (ไบต์ / blob) อัปโหลดขึ้น server
+  /// ส่วนลิงก์ (http / /uploads) ใช้ต่อได้เลย -> คืนรายการ url สุดท้ายตามลำดับเดิม
+  Future<List<String>> _uploadGallery(String dormId, List<dynamic> items) async {
+    final urls = <String>[];
+    for (final item in items) {
+      if (item is Uint8List) {
+        urls.add(await OwnerApiService.uploadDormImage(dormId, item));
+        continue;
+      }
+      final text = item.toString();
+      if (text.startsWith('blob:')) {
+        final bytes = await http.readBytes(Uri.parse(text));
+        urls.add(await OwnerApiService.uploadDormImage(dormId, bytes));
+      } else {
+        urls.add(text);
+      }
+    }
+    return urls;
   }
 
   Future<void> _pickDormDocument({
@@ -773,8 +816,9 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 final phone = phoneCtrl.text.trim();
                 final description = descriptionCtrl.text.trim();
                 final imageUrl = imageUrlCtrl.text.trim();
+                var galleryFailed = false;
                 try {
-                  await OwnerApiService.createDorm({
+                  final newDormId = await OwnerApiService.createDorm({
                     'title': title,
                     'location': location,
                     'phone': phone,
@@ -794,6 +838,21 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                             })
                         .toList(),
                   });
+                  // รูปเพิ่มเติม: อัปโหลดหลังสร้างหอสำเร็จ (ถ้าพลาดไม่ให้หอที่สร้างแล้วหาย)
+                  if (newDormId != null && galleryImages.isNotEmpty) {
+                    try {
+                      final urls = await _uploadGallery(
+                        newDormId.toString(),
+                        galleryImages,
+                      );
+                      await OwnerApiService.setDormImages(
+                        newDormId.toString(),
+                        urls,
+                      );
+                    } catch (_) {
+                      galleryFailed = true;
+                    }
+                  }
                   await _loadOwnerData();
                 } on OwnerApiException catch (error) {
                   if (context.mounted) {
@@ -807,9 +866,11 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 if (!mounted || !dialogContext.mounted) return;
                 Navigator.pop(dialogContext);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
+                  SnackBar(
                     content: Text(
-                      'ส่งข้อมูลหอพักแล้ว และรอแอดมินตรวจอนุมัติก่อนแสดงต่อผู้เช่า',
+                      galleryFailed
+                          ? 'ส่งข้อมูลหอพักแล้ว แต่อัปโหลดรูปเพิ่มเติมไม่สำเร็จ ลองกดแก้ไขประกาศเพื่อเพิ่มรูปอีกครั้ง'
+                          : 'ส่งข้อมูลหอพักแล้ว และรอแอดมินตรวจอนุมัติก่อนแสดงต่อผู้เช่า',
                     ),
                   ),
                 );
