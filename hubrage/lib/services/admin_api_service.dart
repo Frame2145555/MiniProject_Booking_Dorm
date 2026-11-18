@@ -40,6 +40,10 @@ class AdminApiService {
   static Future<void> deleteReview(int reviewId) =>
       _send('DELETE', '/api/admin/reviews/$reviewId');
 
+  /// ประวัติการกระทำของ Admin ล่าสุด
+  static Future<List<Map<String, dynamic>>> getAuditLogs({int limit = 50}) async =>
+      _list((await _send('GET', '/api/admin/audit-logs?limit=$limit'))['data']);
+
   /// รายชื่อผู้ใช้ทุกประเภท (ไม่รวมบัญชีแอดมิน)
   static Future<List<Map<String, dynamic>>> getUsers() async =>
       _list((await _send('GET', '/api/admin/users'))['data']);
