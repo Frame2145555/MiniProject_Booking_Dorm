@@ -9,6 +9,19 @@ flutter test test/widget/tenant_chat_room_view_test.dart test/widget/tenant_chat
 flutter test test/unit/shared_chat_logic_test.dart --reporter expanded
 flutter test test/unit/shared_chat_controller_test.dart --reporter expanded
 
+widget chat
+flutter test test/widget/tenant_chat_list_view_test.dart --reporter expanded
+flutter test test/widget/tenant_chat_room_view_test.dart --reporter expanded
+flutter test test/widget/owner_chat_list_view_test.dart --reporter expanded
+flutter test test/widget/owner_chat_room_view_test.dart --reporter expanded
+flutter test test/widget/owner_chat_room_view_test.dart --reporter expanded
+
+payment
+flutter test test/widget/tenant_payment_view_test.dart --reporter expanded
+flutter test test/widget/admin_payments_view_test.dart --reporter expanded
+flutter test test/widget/owner_reservations_view_test.dart --reporter expanded
+
+
 flutter test test/unit/tenant_dorm_catalog_test.dart test/unit/admin_dorm_catalog_test.dart test/unit/owner_dorm_request_test.dart --reporter expanded
 flutter test test/widget/tenant_search_view_test.dart --reporter expanded
 flutter test test/widget/shared_auth_view_test.dart test/widget/shared_auth_session_view_test.dart --reporter expanded
