@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 import '../../lib/services/session.dart';
 import '../../lib/views/chat_room_view.dart';
 import '../../lib/views/chat_view.dart';
 import '../support/chat_widget_test_helpers.dart';
-import '../support/fake_chat_service.dart';
+import '../support/mock_chat_service.dart';
 
 void main() {
-  late FakeChatService service;
+  late ChatTestServer server; // ข้อมูลฝั่ง server + จำลอง event จาก socket
+  late MockChatService service; // mocktail
 
   setUp(() {
     Session.clear();
-    service = createChatTestService();
+    server = createChatTestServer();
+    service = server.service;
   });
 
   testWidgets('asks the tenant to log in without loading conversations', (
@@ -22,11 +25,11 @@ void main() {
 
     expect(find.text('กรุณาเข้าสู่ระบบก่อนใช้งานแชท'), findsOneWidget);
     expect(find.text('ไปหน้าเข้าสู่ระบบ'), findsOneWidget);
-    expect(service.fetchConversationsCount, 0);
+    verifyNever(() => service.fetchConversations());
   });
 
   testWidgets('refreshes an embedded chat list after login', (tester) async {
-    service.conversationList = [chatTestConversation()];
+    server.conversationList = [chatTestConversation()];
     await tester.pumpWidget(
       chatTestApp(ChatView(embedded: true, service: service)),
     );
@@ -41,7 +44,7 @@ void main() {
 
   testWidgets('clears the conversation list after logout', (tester) async {
     loginChatTestUser();
-    service.conversationList = [chatTestConversation()];
+    server.conversationList = [chatTestConversation()];
     await tester.pumpWidget(
       chatTestApp(ChatView(embedded: true, service: service)),
     );
@@ -69,7 +72,7 @@ void main() {
     tester,
   ) async {
     loginChatTestUser();
-    service.conversationList = [
+    server.conversationList = [
       chatTestConversation(lastMessage: 'ว่างครับ', unread: 3),
     ];
 
@@ -84,15 +87,15 @@ void main() {
 
   testWidgets('updates the list when a new message arrives', (tester) async {
     loginChatTestUser();
-    service.conversationList = [chatTestConversation(lastMessage: 'เก่า')];
+    server.conversationList = [chatTestConversation(lastMessage: 'เก่า')];
     await tester.pumpWidget(chatTestApp(ChatView(service: service)));
     await tester.pumpAndSettle();
     expect(find.text('เก่า'), findsOneWidget);
 
-    service.conversationList = [
+    server.conversationList = [
       chatTestConversation(lastMessage: 'ใหม่', unread: 1),
     ];
-    service.serverEmit('conversation_updated', {
+    server.serverEmit('conversation_updated', {
       'conversation_id': chatTestRoomId,
     });
     await tester.pumpAndSettle();
@@ -103,8 +106,8 @@ void main() {
 
   testWidgets('opens the selected conversation', (tester) async {
     loginChatTestUser();
-    service.conversationList = [chatTestConversation()];
-    service.history = [chatTestMessage(1, chatTestOtherUser, 'สวัสดีครับ')];
+    server.conversationList = [chatTestConversation()];
+    server.history = [chatTestMessage(1, chatTestOtherUser, 'สวัสดีครับ')];
     await tester.pumpWidget(chatTestApp(ChatView(service: service)));
     await tester.pumpAndSettle();
 
@@ -113,6 +116,6 @@ void main() {
 
     expect(find.byType(ChatRoomView), findsOneWidget);
     expect(find.text('สวัสดีครับ'), findsOneWidget);
-    expect(service.joined, [chatTestRoomId]);
+    verify(() => service.joinConversation(chatTestRoomId)).called(1);
   });
 }

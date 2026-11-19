@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 import '../../lib/models/booking_models.dart';
+import '../../lib/services/booking_service.dart';
 import '../../lib/services/session.dart';
 import '../../lib/theme/app_theme.dart';
 import '../../lib/views/my_reservations_view.dart';
 import '../../lib/views/payment_view.dart';
 import '../../lib/widgets/reservation_widgets.dart';
-import '../support/fake_booking_service.dart';
+import '../support/mock_booking_service.dart';
 
 // หมายเหตุ: หน้าชำระเงินนับถอยหลังทุก 1 วินาทีตอน "รอชำระเงิน"
 // pumpAndSettle จะรอไม่จบ จึงใช้ pumpFrames (เดินเวลาทีละช่วง) แทนในสถานะนั้น
@@ -18,13 +20,15 @@ Future<void> pumpFrames(WidgetTester tester, [int frames = 6]) async {
 }
 
 void main() {
-  late FakeBookingService service;
+  late BookingTestServer server; // ข้อมูลการจองฝั่ง server
+  late MockBookingService service; // mocktail
 
   setUp(() {
     Session.token = 'tenant-token';
     Session.userId = 9;
     Session.role = 'tenant';
-    service = FakeBookingService();
+    server = BookingTestServer();
+    service = server.service;
   });
 
   tearDown(Session.clear);
@@ -46,7 +50,7 @@ void main() {
     testWidgets('shows the locked amount, mock QR and countdown', (
       tester,
     ) async {
-      service.add(bookingTestReservation());
+      server.add(bookingTestReservation());
       await openPayment(tester);
 
       expect(
@@ -66,7 +70,7 @@ void main() {
     testWidgets('pays after confirming and moves to admin review', (
       tester,
     ) async {
-      service.add(bookingTestReservation());
+      server.add(bookingTestReservation());
       await openPayment(tester);
 
       await tester.tap(find.text('จ่ายเงิน 4,000 บาท'));
@@ -77,7 +81,7 @@ void main() {
       await tester.tap(find.widgetWithText(ElevatedButton, 'จ่ายเงิน'));
       await pumpFrames(tester);
 
-      expect(service.payCalls, [bookingTestReservationId]);
+      verify(() => service.pay(bookingTestReservationId)).called(1);
       expect(find.text('ชำระเงินแล้ว รอแอดมินตรวจสอบ'), findsOneWidget);
       expect(
         find.descendant(of: find.byType(AppBar), matching: find.text('สถานะการจอง')),
@@ -90,7 +94,7 @@ void main() {
     testWidgets('does not pay when the confirmation is dismissed', (
       tester,
     ) async {
-      service.add(bookingTestReservation());
+      server.add(bookingTestReservation());
       await openPayment(tester);
 
       await tester.tap(find.text('จ่ายเงิน 4,000 บาท'));
@@ -98,16 +102,17 @@ void main() {
       await tester.tap(find.text('ยกเลิก'));
       await pumpFrames(tester);
 
-      expect(service.payCalls, isEmpty);
+      verifyNever(() => service.pay(any()));
       expect(find.text('จ่ายเงิน 4,000 บาท'), findsOneWidget);
     });
 
     testWidgets('shows the server error and stays on payment when paying fails', (
       tester,
     ) async {
-      service
-        ..add(bookingTestReservation())
-        ..payError = 'ยอดเงินไม่ตรงกับราคาที่เจ้าของหอตั้ง';
+      server.add(bookingTestReservation());
+      when(() => service.pay(any())).thenThrow(
+        const BookingException('ยอดเงินไม่ตรงกับราคาที่เจ้าของหอตั้ง'),
+      );
       await openPayment(tester);
 
       await tester.tap(find.text('จ่ายเงิน 4,000 บาท'));
@@ -115,7 +120,7 @@ void main() {
       await tester.tap(find.widgetWithText(ElevatedButton, 'จ่ายเงิน'));
       await pumpFrames(tester);
 
-      expect(service.payCalls, [bookingTestReservationId]);
+      verify(() => service.pay(bookingTestReservationId)).called(1);
       // SnackBar + ข้อความใต้กล่องชำระเงิน
       expect(
         find.text('ยอดเงินไม่ตรงกับราคาที่เจ้าของหอตั้ง'),
@@ -125,7 +130,7 @@ void main() {
     });
 
     testWidgets('cancels the reservation after confirming', (tester) async {
-      service.add(bookingTestReservation());
+      server.add(bookingTestReservation());
       await openPayment(tester);
 
       await tester.tap(find.widgetWithText(TextButton, 'ยกเลิกการจอง'));
@@ -135,7 +140,7 @@ void main() {
       await tester.tap(find.widgetWithText(ElevatedButton, 'ยกเลิกการจอง'));
       await pumpFrames(tester);
 
-      expect(service.cancelCalls, [bookingTestReservationId]);
+      verify(() => service.cancel(bookingTestReservationId)).called(1);
       expect(find.text('สถานะการจอง'), findsOneWidget);
       expect(find.text('ยกเลิกการจองแล้ว'), findsWidgets);
       expect(find.text('PromptPay (จำลอง)'), findsNothing);
@@ -144,7 +149,7 @@ void main() {
     testWidgets('disables paying when time is up and reloads as expired', (
       tester,
     ) async {
-      service.add(
+      server.add(
         bookingTestReservation(
           expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
         ),
@@ -158,21 +163,28 @@ void main() {
       expect(tester.widget<ButtonStyleButton>(payButton).onPressed, isNull);
 
       // server เปลี่ยนเป็น "หมดเวลาชำระเงิน" -> หน้าโหลดใหม่เองเมื่อครบเวลา
-      service.nextLoadStatus = ReservationStatus.expired;
+      clearInteractions(service);
+      when(() => service.getReservation(bookingTestReservationId)).thenAnswer(
+        (_) async => bookingTestWithStatus(
+          server.reservations[bookingTestReservationId]!,
+          ReservationStatus.expired,
+        ),
+      );
       await tester.pump(const Duration(seconds: 1));
       await pumpFrames(tester);
 
+      verify(() => service.getReservation(bookingTestReservationId)).called(1);
       expect(
         find.textContaining('ไม่ได้ชำระเงินภายในเวลาที่กำหนด'),
         findsOneWidget,
       );
-      expect(service.payCalls, isEmpty);
+      verifyNever(() => service.pay(any()));
     });
 
     testWidgets('shows next step and payment reference after admin approval', (
       tester,
     ) async {
-      service.add(
+      server.add(
         bookingTestWithStatus(
           bookingTestReservation(),
           ReservationStatus.approved,
@@ -212,7 +224,7 @@ void main() {
       await openList(tester);
 
       expect(find.text('เข้าสู่ระบบเพื่อดูการจอง'), findsOneWidget);
-      expect(service.myReservationsCalls, 0);
+      verifyNever(() => service.myReservations());
     });
 
     testWidgets('shows an empty state when there is no reservation', (
@@ -221,18 +233,20 @@ void main() {
       await openList(tester);
 
       expect(find.textContaining('ยังไม่มีการจอง'), findsOneWidget);
-      expect(service.myReservationsCalls, 1);
+      verify(() => service.myReservations()).called(1);
     });
 
     testWidgets('shows the server error', (tester) async {
-      service.listError = 'กรุณาเข้าสู่ระบบก่อน';
+      when(
+        () => service.myReservations(),
+      ).thenThrow(const BookingException('กรุณาเข้าสู่ระบบก่อน'));
       await openList(tester);
 
       expect(find.text('กรุณาเข้าสู่ระบบก่อน'), findsOneWidget);
     });
 
     testWidgets('lists reservations and opens payment for one', (tester) async {
-      service.add(bookingTestReservation());
+      server.add(bookingTestReservation());
       await openList(tester);
 
       expect(find.byType(ReservationCard), findsOneWidget);

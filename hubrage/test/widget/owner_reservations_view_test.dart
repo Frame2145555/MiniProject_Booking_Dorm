@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 import '../../lib/models/booking_models.dart';
+import '../../lib/services/booking_service.dart';
 import '../../lib/services/session.dart';
 import '../../lib/theme/app_theme.dart';
 import '../../lib/views/owner_reservations_view.dart';
-import '../support/fake_booking_service.dart';
+import '../support/mock_booking_service.dart';
 
 /// คำขอจองที่ผู้เช่าจ่ายเงินแล้ว + แอดมินตรวจแล้ว (รอเจ้าของหอยืนยัน)
 Reservation approvedReservation({int id = bookingTestReservationId, String room = 'A08'}) =>
@@ -15,13 +17,15 @@ Reservation approvedReservation({int id = bookingTestReservationId, String room 
     );
 
 void main() {
-  late FakeBookingService service;
+  late BookingTestServer server; // ข้อมูลการจองฝั่ง server
+  late MockBookingService service; // mocktail
 
   setUp(() {
     Session.token = 'owner-token';
     Session.userId = 3;
     Session.role = 'seller';
-    service = FakeBookingService();
+    server = BookingTestServer();
+    service = server.service;
   });
 
   tearDown(Session.clear);
@@ -45,7 +49,7 @@ void main() {
         find.text('เข้าสู่ระบบด้วยบัญชีเจ้าของหอเพื่อดูคำขอจอง'),
         findsOneWidget,
       );
-      expect(service.ownerStatusRequests, isEmpty);
+      verifyNever(() => service.ownerReservations(status: any(named: 'status')));
       expect(find.text('ตั้งราคาเช่า'), findsNothing);
     });
 
@@ -54,14 +58,14 @@ void main() {
     ) async {
       await openReservations(tester);
 
-      expect(service.ownerStatusRequests, ['approved']);
+      verify(() => service.ownerReservations(status: 'approved')).called(1);
       expect(find.textContaining('ไม่มีรายการ'), findsOneWidget);
     });
 
     testWidgets('shows tenant, plan and the deposit already paid', (
       tester,
     ) async {
-      service.add(approvedReservation());
+      server.add(approvedReservation());
       await openReservations(tester);
 
       expect(find.text('หอทดสอบ • ห้อง A08'), findsOneWidget);
@@ -76,7 +80,7 @@ void main() {
     testWidgets('confirms a booking after the confirmation dialog', (
       tester,
     ) async {
-      service.add(approvedReservation());
+      server.add(approvedReservation());
       await openReservations(tester);
 
       await tester.tap(find.widgetWithText(ElevatedButton, 'ยืนยันการจอง'));
@@ -88,9 +92,13 @@ void main() {
       await tester.tap(find.widgetWithText(ElevatedButton, 'ยืนยันการจอง').last);
       await tester.pumpAndSettle();
 
-      expect(service.ownerDecisions, [
-        {'id': bookingTestReservationId, 'confirm': true, 'note': null},
-      ]);
+      verify(
+        () => service.ownerDecide(
+          bookingTestReservationId,
+          confirm: true,
+          note: null,
+        ),
+      ).called(1);
       expect(find.text('จองสำเร็จ แจ้งเตือนผู้เช่าในแชทแล้ว'), findsOneWidget);
       // ไม่ใช่ "รอยืนยัน" แล้ว -> หายจากรายการ
       expect(find.text('หอทดสอบ • ห้อง A08'), findsNothing);
@@ -100,7 +108,7 @@ void main() {
     testWidgets('does nothing when the confirmation dialog is cancelled', (
       tester,
     ) async {
-      service.add(approvedReservation());
+      server.add(approvedReservation());
       await openReservations(tester);
 
       await tester.tap(find.widgetWithText(ElevatedButton, 'ยืนยันการจอง'));
@@ -108,12 +116,18 @@ void main() {
       await tester.tap(find.widgetWithText(TextButton, 'ยกเลิก'));
       await tester.pumpAndSettle();
 
-      expect(service.ownerDecisions, isEmpty);
+      verifyNever(
+        () => service.ownerDecide(
+          any(),
+          confirm: any(named: 'confirm'),
+          note: any(named: 'note'),
+        ),
+      );
       expect(find.text('หอทดสอบ • ห้อง A08'), findsOneWidget);
     });
 
     testWidgets('rejects a booking with a reason', (tester) async {
-      service.add(approvedReservation());
+      server.add(approvedReservation());
       await openReservations(tester);
 
       await tester.tap(find.widgetWithText(TextButton, 'ปฏิเสธ'));
@@ -124,9 +138,13 @@ void main() {
       await tester.tap(find.widgetWithText(ElevatedButton, 'ยืนยัน'));
       await tester.pumpAndSettle();
 
-      expect(service.ownerDecisions, [
-        {'id': bookingTestReservationId, 'confirm': false, 'note': 'ห้องต้องซ่อม'},
-      ]);
+      verify(
+        () => service.ownerDecide(
+          bookingTestReservationId,
+          confirm: false,
+          note: 'ห้องต้องซ่อม',
+        ),
+      ).called(1);
       expect(find.text('ปฏิเสธแล้ว แอดมินจะคืนเงินผู้เช่า'), findsOneWidget);
       expect(find.text('หอทดสอบ • ห้อง A08'), findsNothing);
     });
@@ -134,9 +152,14 @@ void main() {
     testWidgets('keeps the booking and shows the error when the server refuses', (
       tester,
     ) async {
-      service
-        ..add(approvedReservation())
-        ..decideError = 'ห้องนี้มีผู้เช่าอยู่แล้ว';
+      server.add(approvedReservation());
+      when(
+        () => service.ownerDecide(
+          any(),
+          confirm: any(named: 'confirm'),
+          note: any(named: 'note'),
+        ),
+      ).thenThrow(const BookingException('ห้องนี้มีผู้เช่าอยู่แล้ว'));
       await openReservations(tester);
 
       await tester.tap(find.widgetWithText(ElevatedButton, 'ยืนยันการจอง'));
@@ -152,7 +175,7 @@ void main() {
     testWidgets('filters by status and hides actions on finished bookings', (
       tester,
     ) async {
-      service
+      server
         ..add(approvedReservation())
         ..add(
           bookingTestWithStatus(
@@ -166,14 +189,19 @@ void main() {
       await tester.tap(find.widgetWithText(ChoiceChip, 'จองสำเร็จ'));
       await tester.pumpAndSettle();
 
-      expect(service.ownerStatusRequests, ['approved', 'completed']);
+      verifyInOrder([
+        () => service.ownerReservations(status: 'approved'),
+        () => service.ownerReservations(status: 'completed'),
+      ]);
       expect(find.text('หอทดสอบ • ห้อง B01'), findsOneWidget);
       expect(find.text('หอทดสอบ • ห้อง A08'), findsNothing);
       expect(find.widgetWithText(ElevatedButton, 'ยืนยันการจอง'), findsNothing);
     });
 
     testWidgets('shows the server error when loading fails', (tester) async {
-      service.listError = 'บัญชีนี้ไม่มีสิทธิ์ทำรายการนี้';
+      when(
+        () => service.ownerReservations(status: any(named: 'status')),
+      ).thenThrow(const BookingException('บัญชีนี้ไม่มีสิทธิ์ทำรายการนี้'));
       await openReservations(tester);
 
       expect(find.text('บัญชีนี้ไม่มีสิทธิ์ทำรายการนี้'), findsOneWidget);
@@ -215,6 +243,8 @@ void main() {
     testWidgets('shows each plan with its current price', (tester) async {
       await openPlans(tester);
 
+      verify(() => service.ownerPlans(2)).called(1);
+
       expect(find.text('ราคาเช่า • หอทดสอบ'), findsOneWidget);
       for (final label in ['1 อาทิตย์', '1 เดือน', '1 เทอม', '1 ปี']) {
         expect(find.text(label), findsOneWidget);
@@ -234,7 +264,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('กรุณาใส่ราคา 1 อาทิตย์'), findsOneWidget);
-      expect(service.savedPlans, isEmpty);
+      verifyNever(() => service.saveOwnerPlans(any(), any()));
       expect(find.byType(OwnerRentPlanView), findsOneWidget);
     });
 
@@ -247,8 +277,10 @@ void main() {
       await tester.tap(find.text('บันทึก'));
       await tester.pumpAndSettle();
 
-      expect(service.savedPlans, hasLength(1));
-      final week = service.savedPlans.single.firstWhere((p) => p.plan == 'week');
+      final saved =
+          verify(() => service.saveOwnerPlans(2, captureAny())).captured.single
+              as List<RentPlan>;
+      final week = saved.firstWhere((p) => p.plan == 'week');
       expect(week.active, isTrue);
       expect(week.price, 1200);
       expect(find.text('บันทึกราคาเช่าแล้ว'), findsOneWidget);

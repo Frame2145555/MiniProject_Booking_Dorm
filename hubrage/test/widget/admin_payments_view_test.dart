@@ -1,78 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 import '../../lib/models/booking_models.dart';
 import '../../lib/services/booking_service.dart';
 import '../../lib/services/session.dart';
 import '../../lib/views/admin_payments_view.dart';
+import '../support/mock_booking_service.dart';
 
-class FakeBookingService extends BookingService {
-  final List<Reservation> payments = [_reservation()];
-  final List<Map<String, Object?>> reviews = [];
-
-  @override
-  Future<List<Reservation>> adminPayments({String status = 'paid'}) async =>
-      payments
-          .where((payment) => status == 'all' || payment.status.code == status)
-          .toList();
-
-  @override
-  Future<Reservation> adminReview(
-    int reservationId, {
-    required bool approve,
-    String? note,
-  }) async {
-    reviews.add({'id': reservationId, 'approve': approve, 'note': note});
-    final updated = _reservation(
-      status: approve ? ReservationStatus.approved : ReservationStatus.rejected,
-    );
-    final index = payments.indexWhere((payment) => payment.id == reservationId);
-    if (index >= 0) payments[index] = updated;
-    return updated;
-  }
-}
-
-Reservation _reservation({ReservationStatus status = ReservationStatus.paid}) =>
-    Reservation(
-      id: 34,
-      bookingId: 17,
-      status: status,
-      statusLabel: status.shortLabel,
-      plan: 'month',
-      planLabel: '1 เดือน',
-      amount: 5000,
-      paidAmount: 5000,
-      amountMatches: true,
-      dormId: 2,
-      dormName: 'หอทดสอบ',
-      ownerName: 'เจ้าของหอทดสอบ',
-      roomId: 8,
-      roomNumber: 'A08',
-      roomType: 'ห้องแอร์',
-      floor: 2,
-      tenantId: 9,
-      tenantName: 'ผู้เช่าทดสอบ',
-    );
+/// ผู้เช่าจ่ายค่าจองแล้ว รอแอดมินตรวจ (ยอด 5,000 บาท)
+Reservation paidReservation() => bookingTestWithStatus(
+  bookingTestReservation(amount: 5000),
+  ReservationStatus.paid,
+);
 
 void main() {
-  late FakeBookingService service;
+  late BookingTestServer server; // ข้อมูลการจองฝั่ง server
+  late MockBookingService service; // mocktail
 
   setUp(() {
     Session.token = 'admin-token';
     Session.role = 'admin';
-    service = FakeBookingService();
+    server = BookingTestServer()..add(paidReservation());
+    service = server.service;
   });
 
   tearDown(Session.clear);
 
-  testWidgets('shows pending payment and approves after confirmation', (
-    tester,
-  ) async {
+  Future<void> openPayments(WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(home: AdminPaymentsView(service: service)),
     );
     await tester.pumpAndSettle();
+  }
 
+  testWidgets('shows pending payment and approves after confirmation', (
+    tester,
+  ) async {
+    await openPayments(tester);
+
+    verify(() => service.adminPayments(status: 'paid')).called(1);
     expect(find.text('ผู้เช่าทดสอบ'), findsOneWidget);
     expect(find.textContaining('หอทดสอบ'), findsOneWidget);
     expect(find.text('อนุมัติ'), findsOneWidget);
@@ -85,22 +52,65 @@ void main() {
     await tester.tap(find.widgetWithText(ElevatedButton, 'อนุมัติ').last);
     await tester.pumpAndSettle();
 
-    expect(service.reviews, [
-      {'id': 34, 'approve': true, 'note': null},
-    ]);
+    verify(
+      () => service.adminReview(
+        bookingTestReservationId,
+        approve: true,
+        note: null,
+      ),
+    ).called(1);
     expect(find.text('ไม่มีรายการ'), findsOneWidget);
+  });
+
+  testWidgets('does not review when the confirmation is cancelled', (
+    tester,
+  ) async {
+    await openPayments(tester);
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'อนุมัติ').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'ยกเลิก'));
+    await tester.pumpAndSettle();
+
+    verifyNever(
+      () => service.adminReview(
+        any(),
+        approve: any(named: 'approve'),
+        note: any(named: 'note'),
+      ),
+    );
+    expect(find.text('ผู้เช่าทดสอบ'), findsOneWidget);
+  });
+
+  testWidgets('keeps the payment and shows the error when review fails', (
+    tester,
+  ) async {
+    when(
+      () => service.adminReview(
+        any(),
+        approve: any(named: 'approve'),
+        note: any(named: 'note'),
+      ),
+    ).thenThrow(const BookingException('รายการนี้ถูกตรวจไปแล้ว'));
+    await openPayments(tester);
+
+    await tester.tap(find.widgetWithText(ElevatedButton, 'อนุมัติ').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ElevatedButton, 'อนุมัติ').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('รายการนี้ถูกตรวจไปแล้ว'), findsOneWidget);
+    expect(find.text('ผู้เช่าทดสอบ'), findsOneWidget);
   });
 
   testWidgets('requires an admin session to access payment review', (
     tester,
   ) async {
     Session.clear();
-    await tester.pumpWidget(
-      MaterialApp(home: AdminPaymentsView(service: service)),
-    );
-    await tester.pumpAndSettle();
+    await openPayments(tester);
 
     expect(find.textContaining('เข้าสู่ระบบด้วยบัญชีแอดมิน'), findsOneWidget);
     expect(find.text('ผู้เช่าทดสอบ'), findsNothing);
+    verifyNever(() => service.adminPayments(status: any(named: 'status')));
   });
 }
