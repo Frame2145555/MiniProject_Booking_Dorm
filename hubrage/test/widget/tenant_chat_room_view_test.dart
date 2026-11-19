@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 import '../../lib/services/session.dart';
 import '../../lib/views/chat_room_view.dart';
 import '../support/chat_widget_test_helpers.dart';
-import '../support/fake_chat_service.dart';
+import '../support/mock_chat_service.dart';
 
 void main() {
-  late FakeChatService service;
+  late ChatTestServer server; // ข้อมูลฝั่ง server + จำลอง event จาก socket
+  late MockChatService service; // mocktail
 
   setUp(() {
     Session.clear();
-    service = createChatTestService();
+    server = createChatTestServer();
+    service = server.service;
   });
 
   Future<void> openRoom(WidgetTester tester) async {
@@ -36,7 +39,7 @@ void main() {
 
   testWidgets('shows the owner, dorm and message history', (tester) async {
     loginChatTestUser();
-    service.history = [
+    server.history = [
       chatTestMessage(1, chatTestOtherUser, 'สวัสดีครับ'),
       chatTestMessage(2, chatTestMe, 'ห้องยังว่างไหมครับ'),
     ];
@@ -62,7 +65,9 @@ void main() {
 
     await typeAndSend(tester, 'ห้องยังว่างไหมครับ');
 
-    expect(service.sentTexts, ['ห้องยังว่างไหมครับ']);
+    verify(
+      () => service.sendMessage(chatTestRoomId, 'ห้องยังว่างไหมครับ', any()),
+    ).called(1);
     expect(find.text('ห้องยังว่างไหมครับ'), findsOneWidget);
     expect(
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
@@ -74,7 +79,7 @@ void main() {
     tester,
   ) async {
     loginChatTestUser();
-    service.history = [
+    server.history = [
       chatTestMessage(1, chatTestOtherUser, 'ข้อความอีกฝั่ง'),
       chatTestMessage(2, chatTestMe, 'ข้อความเรา'),
     ];
@@ -92,7 +97,7 @@ void main() {
     await openRoom(tester);
     expect(find.text('ว่างครับ มาดูได้เลย'), findsNothing);
 
-    service.serverEmit(
+    server.serverEmit(
       'new_message',
       chatTestMessage(5, chatTestOtherUser, 'ว่างครับ มาดูได้เลย'),
     );
@@ -105,7 +110,7 @@ void main() {
     tester,
   ) async {
     loginChatTestUser();
-    service.serverAcceptsMessage = false;
+    server.rejectMessages();
     await openRoom(tester);
 
     await typeAndSend(tester, 'ส่งไม่ออก');
@@ -123,7 +128,7 @@ void main() {
 
     await typeAndSend(tester, '   ');
 
-    expect(service.sentTexts, isEmpty);
+    verifyNever(() => service.sendMessage(any(), any(), any()));
     expect(find.byType(SnackBar), findsNothing);
   });
 
@@ -135,7 +140,7 @@ void main() {
     await typeAndSend(tester, 'อ่านหรือยัง');
     expect(find.textContaining('อ่านแล้ว'), findsNothing);
 
-    service.serverEmit('messages_read', {
+    server.serverEmit('messages_read', {
       'conversation_id': chatTestRoomId,
       'reader_id': chatTestOtherUser,
     });

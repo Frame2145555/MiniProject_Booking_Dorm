@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 import '../../lib/services/session.dart';
 import '../../lib/views/chat_room_view.dart';
 import '../support/chat_widget_test_helpers.dart';
-import '../support/fake_chat_service.dart';
+import '../support/mock_chat_service.dart';
 
 /// ห้องแชทจากมุมเจ้าของหอ (login เป็น seller คุยกับผู้เช่า)
 void main() {
-  late FakeChatService service;
+  late ChatTestServer server; // ข้อมูลฝั่ง server + จำลอง event จาก socket
+  late MockChatService service; // mocktail
 
   setUp(() {
     Session.clear();
-    service = createChatTestService();
+    server = createChatTestServer();
+    service = server.service;
     loginChatTestUser(role: 'seller');
   });
 
@@ -48,20 +51,22 @@ void main() {
     expect(find.text('ผู้เช่าทดสอบ'), findsWidgets);
     expect(find.text('หอรวย เธะ'), findsOneWidget);
     expect(find.text('เริ่มต้นการสนทนากับ ผู้เช่าทดสอบ'), findsOneWidget);
-    expect(service.joined, [chatTestRoomId]);
+    verify(() => service.joinConversation(chatTestRoomId)).called(1);
   });
 
   testWidgets('replies to a tenant: own reply on the right, tenant on the left', (
     tester,
   ) async {
-    service.history = [
+    server.history = [
       chatTestMessage(1, chatTestOtherUser, 'ห้องยังว่างไหมครับ'),
     ];
     await openRoom(tester);
 
     await typeAndSend(tester, 'ว่างครับ มาดูได้เลย');
 
-    expect(service.sentTexts, ['ว่างครับ มาดูได้เลย']);
+    verify(
+      () => service.sendMessage(chatTestRoomId, 'ว่างครับ มาดูได้เลย', any()),
+    ).called(1);
     expect(bubbleOf(tester, 'ว่างครับ มาดูได้เลย').alignment, Alignment.centerRight);
     expect(bubbleOf(tester, 'ห้องยังว่างไหมครับ').alignment, Alignment.centerLeft);
     expect(
@@ -73,7 +78,7 @@ void main() {
   testWidgets('shows a booking notice from the system as a centered box', (
     tester,
   ) async {
-    service.history = [
+    server.history = [
       chatTestSystemMessage(
         1,
         'แอดมินตรวจสอบค่ามัดจำห้อง A08 แล้ว รอคุณยืนยันการจอง',
@@ -94,7 +99,7 @@ void main() {
   ) async {
     await openRoom(tester);
 
-    service.serverEmit(
+    server.serverEmit(
       'new_message',
       chatTestSystemMessage(7, 'ผู้เช่าชำระค่ามัดจำแล้ว รอแอดมินตรวจสอบ'),
     );
@@ -111,7 +116,7 @@ void main() {
     await typeAndSend(tester, 'ส่งรูปห้องให้แล้วนะครับ');
     expect(find.textContaining('อ่านแล้ว'), findsNothing);
 
-    service.serverEmit('messages_read', {
+    server.serverEmit('messages_read', {
       'conversation_id': chatTestRoomId,
       'reader_id': chatTestOtherUser,
     });
@@ -123,7 +128,7 @@ void main() {
   testWidgets('keeps the reply and shows an error when sending fails', (
     tester,
   ) async {
-    service.serverAcceptsMessage = false;
+    server.rejectMessages();
     await openRoom(tester);
 
     await typeAndSend(tester, 'ส่งไม่ออก');

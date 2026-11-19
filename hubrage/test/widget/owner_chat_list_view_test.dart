@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 import '../../lib/services/session.dart';
 import '../../lib/views/chat_room_view.dart';
 import '../../lib/views/chat_view.dart';
 import '../support/chat_widget_test_helpers.dart';
-import '../support/fake_chat_service.dart';
+import '../support/mock_chat_service.dart';
 
 /// ห้องแชทจากมุมเจ้าของหอ: อีกฝั่งคือผู้เช่า
 Map<String, dynamic> tenantConversation({
@@ -18,11 +19,13 @@ Map<String, dynamic> tenantConversation({
 );
 
 void main() {
-  late FakeChatService service;
+  late ChatTestServer server; // ข้อมูลฝั่ง server + จำลอง event จาก socket
+  late MockChatService service; // mocktail
 
   setUp(() {
     Session.clear();
-    service = createChatTestService();
+    server = createChatTestServer();
+    service = server.service;
   });
 
   Future<void> openList(WidgetTester tester) async {
@@ -36,7 +39,7 @@ void main() {
     tester,
   ) async {
     loginChatTestUser(role: 'seller');
-    service.conversationList = [chatTestConversation()];
+    server.conversationList = [chatTestConversation()];
 
     await openList(tester);
 
@@ -50,7 +53,7 @@ void main() {
     await openList(tester);
 
     expect(find.text('กรุณาเข้าสู่ระบบก่อนใช้งานแชท'), findsOneWidget);
-    expect(service.fetchConversationsCount, 0);
+    verifyNever(() => service.fetchConversations());
   });
 
   testWidgets('shows an owner empty state when no tenant has written', (
@@ -67,7 +70,7 @@ void main() {
     tester,
   ) async {
     loginChatTestUser(role: 'seller');
-    service.conversationList = [tenantConversation(unread: 2)];
+    server.conversationList = [tenantConversation(unread: 2)];
 
     await openList(tester);
 
@@ -79,13 +82,13 @@ void main() {
 
   testWidgets('updates when a tenant sends a new message', (tester) async {
     loginChatTestUser(role: 'seller');
-    service.conversationList = [tenantConversation(lastMessage: 'สวัสดีครับ')];
+    server.conversationList = [tenantConversation(lastMessage: 'สวัสดีครับ')];
     await openList(tester);
 
-    service.conversationList = [
+    server.conversationList = [
       tenantConversation(lastMessage: 'ขอนัดดูห้องพรุ่งนี้', unread: 1),
     ];
-    service.serverEmit('conversation_updated', {
+    server.serverEmit('conversation_updated', {
       'conversation_id': chatTestRoomId,
     });
     await tester.pumpAndSettle();
@@ -99,25 +102,25 @@ void main() {
     tester,
   ) async {
     loginChatTestUser(role: 'seller');
-    service.conversationList = [tenantConversation()];
-    service.history = [
+    server.conversationList = [tenantConversation()];
+    server.history = [
       chatTestMessage(1, chatTestOtherUser, 'ห้องยังว่างไหมครับ'),
     ];
     await openList(tester);
-    final loadsBefore = service.fetchConversationsCount;
+    clearInteractions(service); // นับเฉพาะการโหลดหลังจากนี้
 
     await tester.tap(find.text('ผู้เช่าทดสอบ'));
     await tester.pumpAndSettle();
 
     expect(find.byType(ChatRoomView), findsOneWidget);
     expect(find.text('ผู้เช่าทดสอบ'), findsOneWidget); // ชื่อห้อง = ผู้เช่า
-    expect(service.joined, [chatTestRoomId]);
+    verify(() => service.joinConversation(chatTestRoomId)).called(1);
 
     // กลับหน้ารายการ (ห้องแชทใช้ปุ่มย้อนกลับแบบกำหนดเอง จึงสั่ง Navigator โดยตรง)
     Navigator.of(tester.element(find.byType(ChatRoomView))).pop();
     await tester.pumpAndSettle();
 
     expect(find.byType(ChatRoomView), findsNothing);
-    expect(service.fetchConversationsCount, greaterThan(loadsBefore));
+    verify(() => service.fetchConversations()).called(greaterThanOrEqualTo(1));
   });
 }

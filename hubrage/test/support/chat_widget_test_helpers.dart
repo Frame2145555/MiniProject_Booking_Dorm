@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../lib/services/session.dart';
 import '../../lib/theme/app_theme.dart';
 
-import 'fake_chat_service.dart';
+import 'mock_chat_service.dart';
 
 const chatTestMe = 1;
 const chatTestOtherUser = 2;
@@ -48,4 +48,5 @@ void loginChatTestUser({int userId = chatTestMe, String role = 'tenant'}) {
   Session.loggedIn.value = true;
 }
 
-FakeChatService createChatTestService() => FakeChatService(myId: chatTestMe);
+/// MockChatService (mocktail) + stub ที่ทำตัวเหมือน server แชท
+ChatTestServer createChatTestServer() => ChatTestServer(myId: chatTestMe);
