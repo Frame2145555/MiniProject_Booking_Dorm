@@ -18,6 +18,11 @@ class OwnerApiException implements Exception {
 }
 
 class OwnerApiService {
+  /// ใช้ในเทสต์: ใส่ MockClient เพื่อไม่ต้องต่อ server จริง (เหมือน AdminApiService.client)
+  /// เป็น null = ใช้ http.Client ปกติ (ตอนรันแอปจริง)
+  @visibleForTesting
+  static http.Client? client;
+
   // ใช้ login เดียวกับทั้งแอป (Session) -> login ที่หน้าบัญชีหรือหน้านี้ที่ไหนก็ได้
   // แล้วใช้ได้ทั้งระบบเจ้าของหอและแชท ไม่ต้อง login ซ้ำ
   static String get _token => isLoggedIn ? Session.token : '';
@@ -246,6 +251,7 @@ class OwnerApiService {
       headers['Authorization'] = 'Bearer $_token';
     }
 
+    final c = client ?? http.Client();
     try {
       debugPrint(
         '[OWNER API DEBUG] request $method $uri '
@@ -253,11 +259,11 @@ class OwnerApiService {
         'bodyBytes=${body == null ? 0 : utf8.encode(jsonEncode(body)).length}',
       );
       final request = switch (method) {
-        'GET' => http.get(uri, headers: headers),
-        'POST' => http.post(uri, headers: headers, body: jsonEncode(body)),
-        'PUT' => http.put(uri, headers: headers, body: jsonEncode(body)),
-        'PATCH' => http.patch(uri, headers: headers, body: jsonEncode(body)),
-        'DELETE' => http.delete(uri, headers: headers),
+        'GET' => c.get(uri, headers: headers),
+        'POST' => c.post(uri, headers: headers, body: jsonEncode(body)),
+        'PUT' => c.put(uri, headers: headers, body: jsonEncode(body)),
+        'PATCH' => c.patch(uri, headers: headers, body: jsonEncode(body)),
+        'DELETE' => c.delete(uri, headers: headers),
         _ => throw ArgumentError.value(method, 'method', 'Unsupported method'),
       };
       final response = await request.timeout(const Duration(seconds: 15));
@@ -288,6 +294,8 @@ class OwnerApiService {
       throw OwnerApiException(
         'เชื่อมต่อ ${OwnerApiConfig.baseUrl} ไม่สำเร็จ: $error',
       );
+    } finally {
+      if (client == null) c.close();
     }
   }
 }

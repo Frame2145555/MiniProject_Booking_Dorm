@@ -451,14 +451,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
           ),
         ],
       ),
-    ).then((_) {
-      titleController.dispose();
-      addressController.dispose();
-      phoneController.dispose();
-      descriptionController.dispose();
-      minPriceController.dispose();
-      maxPriceController.dispose();
-    });
+    );
   }
 
   /// เตรียมรายการรูปเพิ่มเติมก่อนบันทึก: รูปที่เลือกจากเครื่อง (ไบต์ / blob) อัปโหลดขึ้น server
@@ -2921,7 +2914,7 @@ class _OwnerDashboardViewState extends State<OwnerDashboardView> {
                 'รายได้',
                 subtitle: 'นับจากการจองที่คุณกดยืนยันแล้ว',
               ),
-              OwnerRevenueSection(reloadKey: _revenueTick),
+              if (_revenueTick > 0) OwnerRevenueSection(reloadKey: _revenueTick),
               const SizedBox(height: 24),
               _sectionHeader(
                 'รายการหอพักของคุณ',

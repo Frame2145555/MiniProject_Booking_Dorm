@@ -15,7 +15,7 @@ import '../../lib/services/chat_service.dart';
 class MockChatService extends Mock implements ChatService {}
 
 /// any() กับพารามิเตอร์ที่เป็นฟังก์ชันต้องมีค่าสำรองให้ mocktail
-//(mocktail เลือกค่าสำรองจากชนิดของค่าที่ส่งเข้าไปเอง ไม่ต้องใส่ <type>)
+/// (mocktail เลือกค่าสำรองจากชนิดของค่าที่ส่งเข้าไปเอง ไม่ต้องใส่ <type>)
 void registerChatFallbackValues() {
   registerFallbackValue((dynamic _) {}); // handler ของ listen(event, handler)
   registerFallbackValue((bool _) {}); // callback ของ sendMessage(..., done)
