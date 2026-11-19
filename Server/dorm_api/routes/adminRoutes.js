@@ -31,7 +31,11 @@ module.exports = (db, auth) => {
         (SELECT COUNT(*) FROM dorms WHERE approval_status = 'pending')        AS pending_dorms,
         (SELECT COUNT(*) FROM dorms WHERE approval_status = 'approved')       AS approved_dorms,
         (SELECT COUNT(*) FROM dorm_view_events)                               AS total_views,
-        (SELECT COUNT(*) FROM bookings)                                       AS bookings`);
+        (SELECT COUNT(*) FROM bookings)                                       AS bookings,
+        (SELECT COUNT(*) FROM booking_payments WHERE status = 'paid')         AS pending_payments,
+        (SELECT COUNT(*) FROM user_dorm_reports WHERE status = 'pending')     AS pending_reports,
+        (SELECT COUNT(*) FROM dorm_reviews WHERE status = 'visible')          AS visible_reviews,
+        (SELECT COUNT(*) FROM dorm_reviews)                                   AS total_reviews`);
     res.json({ success: true, data: row });
   });
 
@@ -270,12 +274,14 @@ module.exports = (db, auth) => {
         [ids]
       );
       const [docs] = await db.query(
-        `SELECT dorm_id, document_type AS type, display_name AS name FROM dorm_documents WHERE dorm_id IN (?)`,
+        `SELECT id, dorm_id, document_type AS type, display_name AS name, mime_type AS mimeType,
+                ${require("../routes/dormDocumentRoutes").HAS_FILE_SQL} AS hasFile
+           FROM dorm_documents WHERE dorm_id IN (?)`,
         [ids]
       );
       for (const d of dorms) {
         d.amenities = amen.filter((a) => a.dorm_id === d.id).map((a) => a.name);
-        d.documents = docs.filter((x) => x.dorm_id === d.id).map(({ type, name }) => ({ type, name }));
+        d.documents = docs.filter((x) => x.dorm_id === d.id).map(({ id, type, name, mimeType, hasFile }) => ({ id, type, name, mimeType, hasFile: !!hasFile }));
       }
     }
     res.json({ success: true, count: dorms.length, data: dorms });

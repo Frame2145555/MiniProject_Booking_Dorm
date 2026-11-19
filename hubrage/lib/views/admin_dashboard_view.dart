@@ -7,6 +7,7 @@ import '../models/kyc_request_model.dart';
 import '../theme/app_theme.dart';
 import '../services/admin_api_service.dart';
 import '../services/session.dart';
+import '../widgets/dorm_document_viewer.dart';
 import 'admin_kyc_detail_view.dart';
 import 'admin_users_view.dart';
 import 'admin_payments_view.dart';
@@ -24,15 +25,23 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
   int _selectedSection = 0;
   String _reportFilter = 'pending';
 
+  /// อัปเดตตัวเลข Overview + รีวิว ทุก 20 วินาที (เฉพาะตอน login เป็นแอดมิน)
+  Timer? _livePoller;
+
   @override
   void initState() {
     super.initState();
     Session.loggedIn.addListener(_onSessionChanged);
     if (AdminApiService.isAdmin) unawaited(_loadKyc());
+    _livePoller = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => widget.consoleState.refreshLive(),
+    );
   }
 
   @override
   void dispose() {
+    _livePoller?.cancel();
     Session.loggedIn.removeListener(_onSessionChanged);
     super.dispose();
   }
@@ -318,15 +327,30 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
                 (document) => ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(
-                    Icons.picture_as_pdf_outlined,
+                  leading: Icon(
+                    '${document['mimeType'] ?? ''}'.startsWith('image/')
+                        ? Icons.image_outlined
+                        : Icons.picture_as_pdf_outlined,
                     color: AppColors.ink,
                   ),
                   title: Text(document['type']?.toString() ?? 'เอกสาร'),
                   subtitle: Text(
-                    document['name']?.toString() ??
-                        document['reference']?.toString() ??
-                        '',
+                    document['hasFile'] == false
+                        ? '${document['name'] ?? ''} (ส่งก่อนมีระบบอัปโหลดไฟล์ ไม่มีตัวไฟล์)'
+                        : document['name']?.toString() ??
+                              document['reference']?.toString() ??
+                              '',
+                  ),
+                  // ปุ่มดูเอกสาร: ใช้ได้เมื่อ login เป็นแอดมินและเอกสารมีไฟล์อยู่บน server
+                  trailing: TextButton.icon(
+                    onPressed:
+                        widget.consoleState.serverMode &&
+                            document['id'] != null &&
+                            document['hasFile'] == true
+                        ? () => showDormDocumentViewer(context, document)
+                        : null,
+                    icon: const Icon(Icons.visibility_outlined, size: 18),
+                    label: const Text('ดูเอกสาร'),
                   ),
                 ),
               ),
@@ -520,7 +544,7 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
             Expanded(
               child: _summaryCard(
                 'บัญชีถูกระงับ',
-                '$suspendedSellers',
+                '${widget.consoleState.overviewLoaded ? widget.consoleState.suspendedUsers : suspendedSellers}',
                 'ราย',
                 Icons.block,
                 AppColors.danger,
@@ -538,6 +562,77 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
             ),
           ],
         ),
+        // ตัวเลขจาก GET /api/admin/overview (แสดงเมื่อ login เป็นแอดมินแล้ว)
+        if (widget.consoleState.overviewLoaded) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _summaryCard(
+                  'Tenant ทั้งหมด',
+                  '${widget.consoleState.totalTenants}',
+                  'ราย',
+                  Icons.people_outline,
+                  AppColors.accent,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _summaryCard(
+                  'Payment รอตรวจ',
+                  '${widget.consoleState.pendingPayments}',
+                  'รายการ',
+                  Icons.payments_outlined,
+                  AppColors.warning,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _summaryCard(
+                  'Report รอตรวจ',
+                  '${widget.consoleState.pendingReportCount}',
+                  'รายการ',
+                  Icons.flag_outlined,
+                  AppColors.danger,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _summaryCard(
+                  'การจองทั้งหมด',
+                  '${widget.consoleState.totalBookings}',
+                  'รายการ',
+                  Icons.event_available_outlined,
+                  AppColors.accent,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _summaryCard(
+                  'รีวิวทั้งหมด',
+                  '${widget.consoleState.totalReviews}',
+                  'รายการ',
+                  Icons.star_outline,
+                  AppColors.warning,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _summaryCard(
+                  'รีวิวที่ซ่อน',
+                  '${widget.consoleState.hiddenReviewCount}',
+                  'รายการ',
+                  Icons.visibility_off_outlined,
+                  AppColors.danger,
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -557,7 +652,12 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
           children: [
             _sectionChip('เจ้าของหอ', 0, Icons.store_outlined),
             _sectionChip('ผู้ใช้งาน', 1, Icons.people_alt_outlined),
-            _sectionChip('Payment', 2, Icons.payments_outlined),
+            _sectionChip(
+              'Payment',
+              2,
+              Icons.payments_outlined,
+              badge: widget.consoleState.pendingPayments,
+            ),
             _sectionChip(
               'Report',
               3,

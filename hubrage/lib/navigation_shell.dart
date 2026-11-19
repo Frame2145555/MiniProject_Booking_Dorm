@@ -15,6 +15,7 @@ import 'views/admin_payments_view.dart';
 import 'views/owner_reservations_view.dart';
 import 'models/dorm_catalog.dart';
 import 'services/admin_api_service.dart';
+import 'services/notification_service.dart';
 import 'services/session.dart';
 import 'services/tenant_api_service.dart';
 import 'models/admin_console_state.dart';
@@ -36,6 +37,9 @@ class _NavigationShellState extends State<NavigationShell> {
   UserRole _currentRole = UserRole.tenant;
   int _currentIndex = 0;
   bool _hasUnreadNotifications = true;
+
+  /// เช็กจุดแดงที่กระดิ่งเป็นระยะ (ผู้เช่าเห็นผลรายงาน / เจ้าของหอเห็นค่ามัดจำที่แอดมินตรวจแล้ว)
+  Timer? _notificationPoller;
 
   /// แถบบน (header) ยุบ/แสดงได้ — หน้าค้นหาของผู้เช่าสั่งยุบตอนเลื่อนรายการลง
   final ValueNotifier<bool> _headerVisible = ValueNotifier<bool>(true);
@@ -78,13 +82,17 @@ class _NavigationShellState extends State<NavigationShell> {
     super.initState();
     Session.loggedIn.addListener(_onSessionChanged);
     DormCatalog.live.load(); // โหลดรายการหอจริงจาก server ตั้งแต่เปิดแอป
-    if (Session.isLoggedIn && Session.role == 'tenant') {
+    if (Session.isLoggedIn) {
       unawaited(_refreshNotificationBadge());
     }
+    _notificationPoller = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (Session.isLoggedIn) unawaited(_refreshNotificationBadge());
+    });
   }
 
   @override
   void dispose() {
+    _notificationPoller?.cancel();
     Session.loggedIn.removeListener(_onSessionChanged);
     _consoleState.dispose();
     _favorites.dispose();
@@ -97,17 +105,49 @@ class _NavigationShellState extends State<NavigationShell> {
     setState(() => _currentIndex = index);
   }
 
+  /// โหมดที่บัญชีปัจจุบันสลับไปได้
+  /// - ผู้เช่า / ยังไม่ login : ผู้เช่าอย่างเดียว
+  /// - เจ้าของหอ (seller)    : ผู้เช่า + เจ้าของหอ
+  /// - แอดมิน (admin)        : ผู้เช่า + แอดมิน
+  List<UserRole> get _allowedRoles {
+    if (!Session.isLoggedIn) return const [UserRole.tenant];
+    switch (Session.role) {
+      case 'seller':
+        return const [UserRole.tenant, UserRole.seller];
+      case 'admin':
+        return const [UserRole.tenant, UserRole.admin];
+      default:
+        return const [UserRole.tenant];
+    }
+  }
+
   void _onSessionChanged() {
-    if (!Session.isLoggedIn || Session.role != 'tenant') {
+    // ออกจากระบบ / เปลี่ยนบัญชี แล้วโหมดเดิมใช้ไม่ได้ -> กลับไปโหมดผู้เช่า
+    if (!_allowedRoles.contains(_currentRole)) _onRoleChanged(UserRole.tenant);
+    if (!Session.isLoggedIn) {
       setState(() => _hasUnreadNotifications = true);
       return;
     }
     unawaited(_refreshNotificationBadge());
   }
 
+  /// ผู้เช่าใช้ /api/tenant/notifications (ของเดิม) ส่วนบทบาทอื่น (เจ้าของหอ/แอดมิน) ใช้ /api/notifications
+  /// ทั้งสองทางอ่านจากตาราง user_notifications เดียวกัน
+  bool get _isTenantSession => Session.isLoggedIn && Session.role == 'tenant';
+
+  Future<List<Map<String, dynamic>>> _fetchNotifications() async {
+    if (_isTenantSession) return TenantApiService.getNotifications();
+    final result = await NotificationService.instance.fetch();
+    return result.items.map((item) => item.toMap()).toList();
+  }
+
+  Future<void> _markNotificationsRead() => _isTenantSession
+      ? TenantApiService.markNotificationsRead()
+      : NotificationService.instance.markAllRead();
+
   Future<void> _refreshNotificationBadge() async {
     try {
-      final notifications = await TenantApiService.getNotifications();
+      final notifications = await _fetchNotifications();
       if (!mounted) return;
       setState(
         () => _hasUnreadNotifications = notifications.any(
@@ -116,17 +156,19 @@ class _NavigationShellState extends State<NavigationShell> {
       );
     } on TenantApiException {
       // The notification button retries the request and surfaces the error.
+    } on NotificationException {
+      // เหมือนกัน: กดกระดิ่งแล้วค่อยแจ้ง error
     }
   }
 
   Future<void> _openNotifications() async {
-    if (!Session.isLoggedIn || Session.role != 'tenant') {
+    if (!Session.isLoggedIn) {
       await showNotificationsSheet(context);
       return;
     }
 
     try {
-      final notifications = await TenantApiService.getNotifications();
+      final notifications = await _fetchNotifications();
       if (!mounted) return;
       setState(
         () => _hasUnreadNotifications = notifications.any(
@@ -138,15 +180,21 @@ class _NavigationShellState extends State<NavigationShell> {
       if (notifications.any(
         (notification) => notification['isRead'] != true,
       )) {
-        await TenantApiService.markNotificationsRead();
+        await _markNotificationsRead();
       }
       if (mounted) setState(() => _hasUnreadNotifications = false);
     } on TenantApiException catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(error.message)));
+      _showNotificationError(error.message);
+    } on NotificationException catch (error) {
+      _showNotificationError(error.message);
     }
+  }
+
+  void _showNotificationError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _onRoleChanged(UserRole newRole) {
@@ -156,7 +204,7 @@ class _NavigationShellState extends State<NavigationShell> {
     if (newRole == UserRole.admin && AdminApiService.isAdmin) {
       _consoleState.loadFromServer();
     }
-    if (newRole == UserRole.tenant && Session.role == 'tenant') {
+    if (Session.isLoggedIn) {
       unawaited(_refreshNotificationBadge());
     }
     setState(() {
@@ -300,41 +348,47 @@ class _NavigationShellState extends State<NavigationShell> {
                 ],
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(24, 20, 24, 8),
-              child: Row(
-                children: [
-                  Icon(Icons.swap_horiz_rounded, size: 18, color: AppColors.muted),
-                  SizedBox(width: 6),
-                  Text(
-                    'โหมดสิทธิ์',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.muted,
+            // แสดงเฉพาะโหมดที่บัญชีนี้ใช้ได้ (ดู _allowedRoles) -- ผู้เช่ามีโหมดเดียวจึงไม่ต้องแสดงตัวสลับ
+            if (_allowedRoles.length > 1) ...[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(24, 20, 24, 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.swap_horiz_rounded, size: 18, color: AppColors.muted),
+                    SizedBox(width: 6),
+                    Text(
+                      'โหมดสิทธิ์',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.muted,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            _roleTile(
-              role: UserRole.tenant,
-              icon: Icons.person_search_rounded,
-              title: 'ผู้เช่า (User)',
-              subtitle: 'ค้นหา บันทึก และแชทกับเจ้าของหอ',
-            ),
-            _roleTile(
-              role: UserRole.seller,
-              icon: Icons.storefront_rounded,
-              title: 'เจ้าของหอ (Seller)',
-              subtitle: 'จัดการหอพัก ห้องพัก และประกาศ',
-            ),
-            _roleTile(
-              role: UserRole.admin,
-              icon: Icons.admin_panel_settings_rounded,
-              title: 'แอดมิน (Admin)',
-              subtitle: 'ตรวจเอกสารและดูแลบัญชีผู้ขาย',
-            ),
+              _roleTile(
+                role: UserRole.tenant,
+                icon: Icons.person_search_rounded,
+                title: 'ผู้เช่า (User)',
+                subtitle: 'ค้นหา บันทึก และแชทกับเจ้าของหอ',
+              ),
+              if (_allowedRoles.contains(UserRole.seller))
+                _roleTile(
+                  role: UserRole.seller,
+                  icon: Icons.storefront_rounded,
+                  title: 'เจ้าของหอ (Seller)',
+                  subtitle: 'จัดการหอพัก ห้องพัก และประกาศ',
+                ),
+              if (_allowedRoles.contains(UserRole.admin))
+                _roleTile(
+                  role: UserRole.admin,
+                  icon: Icons.admin_panel_settings_rounded,
+                  title: 'แอดมิน (Admin)',
+                  subtitle: 'ตรวจเอกสารและดูแลบัญชีผู้ขาย',
+                ),
+            ] else
+              const SizedBox(height: 12),
             const SizedBox(height: 8),
             // เมนูระบบจองแบบชำระเงิน (แต่ละโหมดเห็นเมนูของตัวเอง)
             if (_currentRole == UserRole.tenant) ...[
@@ -346,13 +400,6 @@ class _NavigationShellState extends State<NavigationShell> {
             if (_currentRole == UserRole.admin)
               _drawerLink(Icons.price_check_rounded, 'ตรวจสอบการชำระเงินค่าจอง', const AdminPaymentsView()),
             const Spacer(),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(24, 0, 24, 20),
-              child: Text(
-                'โหมดสิทธิ์สำหรับทดสอบต้นแบบแอป',
-                style: TextStyle(color: AppColors.muted, fontSize: 11),
-              ),
-            ),
           ],
         ),
       ),

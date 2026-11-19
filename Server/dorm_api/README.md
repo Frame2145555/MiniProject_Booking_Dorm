@@ -62,11 +62,17 @@ npm run chat:cli -- seller@test.com                 # แชทผ่าน term
 | `controllers/`, `middleware/`, `config/` | logic, auth และการเชื่อมต่อฐานข้อมูล | พี่ |
 | `routes/ownerBookingRoutes.js` | เจ้าของหอ: ดูคำขอจอง + ยืนยัน/ปฏิเสธการจองและนัดดูห้อง (เพิ่มให้ ไม่ได้แก้ไฟล์ของพี่) | รวม |
 | `routes/adminRoutes.js` | /api/admin/... อนุมัติ/ปฏิเสธหอ ระงับ/ปลดระงับบัญชี | รวม |
+| `routes/ownerRoomRoutes.js` | เจ้าของหอ: แก้ไข/ลบห้อง (เลขห้อง ประเภท ราคา ชั้น) | mamew |
+| `routes/ownerRevenueRoutes.js` | เจ้าของหอ: สรุปรายได้รายเดือน/รายหอ | mamew |
+| `routes/dormImagesRoutes.js` | เจ้าของหอ: อัปโหลดรูปหน้าปก/รูปเพิ่มเติม (ไฟล์อยู่ใน `uploads/dorms/`) | mamew |
+| `routes/notificationRoutes.js` | กระดิ่งแจ้งเตือนทุกบทบาท (ใช้ตาราง `user_notifications`) | mamew |
+| `routes/reviewRoutes.js` | รีวิวหอพัก: ผู้เช่าเขียน / แอดมินซ่อน-แสดง-ลบ | mamew |
 | `app.json` | port + **jwt_secret** (ทุกระบบใช้ key นี้ ห้ามลบ) | |
 | `db-config.json` | ตั้งค่า MySQL | |
 | `db.json` | ข้อมูลของ json-server (`/api/<ชื่อ>`) | |
 | `scripts/seed_passwords.js` / `scripts/seed_dorms.js` | ใส่ข้อมูลทดสอบ | |
 | `test/integration/booking_smoke.js` | ทดสอบระบบหอ/จอง/แอดมินครบวงจร | |
+| `test/integration/notifications_smoke.js` | ทดสอบกระดิ่งแจ้งเตือนเจ้าของหอ (`npm run test:notifications`) | |
 
 > รัน `node server.js` ตัวเดียวพอ ไม่ต้องเปิดเซิร์ฟเวอร์ legacy พอร์ต 3001 อีกต่อไป
 > login ที่เดียว (`POST /api/login`) แล้วใช้ token ตัวเดียวกันกับทุกระบบได้
@@ -77,8 +83,9 @@ npm run chat:cli -- seller@test.com                 # แชทผ่าน term
 | บัญชี | `POST /api/register` · `POST /api/login` · `GET /api/me` · `POST /api/owner/login` (เฉพาะ seller) |
 | ค้นหาหอ | `GET /api/dorms` · `GET /api/dorms/:id` · `GET /api/amenities` · `GET /api/tenant/dorms` · `GET /api/tenant/dorms/:id` |
 | ผู้เช่า | `GET /api/tenant/dorms/:dormId/reviews` · `POST /api/tenant/dorms/:dormId/reviews` (ผู้เช่าที่กำลังพัก) · `POST /api/tenant/dorms/favorite` · `POST /api/tenant/visit-requests` · `POST /api/tenant/bookings` · `GET /api/tenant/bookings/my-bookings` · `PATCH /api/tenant/bookings/:id/cancel` · `GET /api/tenant/notifications` · `PATCH /api/tenant/notifications/read` |
-| เจ้าของหอ (ต้อง login เป็น seller) | `GET /api/owner/dashboard/stats` · `GET/POST /api/owner/dorms` · `PUT /api/owner/dorms/:id` · `PATCH /api/owner/dorms/:id/visibility` · `POST /api/owner/dorms/:dormId/rooms` · `PATCH /api/owner/rooms/:roomId/status` · `GET /api/owner/visit-requests` · `PATCH /api/owner/visit-requests/:id/status` · `GET /api/owner/bookings` · `PATCH /api/owner/bookings/:id/status` |
-| แอดมิน (ต้อง login เป็น admin) | `GET /api/admin/overview` · `GET /api/admin/sellers` · `GET /api/admin/reviews?status=visible\|hidden\|all` · `PATCH /api/admin/reviews/:id` · `DELETE /api/admin/reviews/:id` · `GET /api/admin/reports?status=pending\|resolved\|dismissed\|all` · `PATCH /api/admin/reports/:id` · `PATCH /api/admin/users/:id/status` · `GET /api/admin/dorms?status=pending\|approved\|rejected\|all` · `PATCH /api/admin/dorms/:id/approval` |
+| เจ้าของหอ (ต้อง login เป็น seller) | `GET /api/owner/dashboard/stats` · `PUT/DELETE /api/owner/rooms/:roomId` · `GET /api/owner/revenue?year=` · `POST/PUT /api/owner/dorms/:dormId/images` · `GET/POST /api/owner/dorms` · `PUT /api/owner/dorms/:id` · `PATCH /api/owner/dorms/:id/visibility` · `POST /api/owner/dorms/:dormId/rooms` · `PATCH /api/owner/rooms/:roomId/status` · `GET /api/owner/visit-requests` · `PATCH /api/owner/visit-requests/:id/status` · `GET /api/owner/bookings` · `PATCH /api/owner/bookings/:id/status` |
+| แอดมิน (ต้อง login เป็น admin) | `GET /api/admin/overview` · `GET /api/admin/sellers` · `GET /api/admin/reviews?status=visible\|hidden\|all` · `PATCH /api/admin/reviews/:id` · `DELETE /api/admin/reviews/:id` · `GET /api/admin/reports?status=pending\|resolved\|dismissed\|all` · `PATCH /api/admin/reports/:id` · `PATCH /api/admin/users/:id/status` · `GET /api/admin/dorms?status=pending\|approved\|rejected\|all` · `PATCH /api/admin/dorms/:id/approval` · `GET /api/admin/dorm-documents/:id` · `GET /api/admin/dorm-documents/:id/link` |
+| แจ้งเตือน (ต้อง login ทุกบทบาท) | `GET /api/notifications` · `POST /api/notifications/read-all` · `PATCH /api/notifications/:id/read` |
 | แชท (ต้อง login) | `POST/GET /api/conversations` · `GET /api/conversations/:id/messages` · Socket.IO |
 
 ## ขั้นตอนของระบบหอ (ทดสอบในแอปได้ครบ)
@@ -128,6 +135,15 @@ npm run chat:cli -- seller@test.com                 # แชทผ่าน term
 ผู้ใช้ทั่วไปอ่านรีวิวที่แสดงอยู่ได้ เจ้าของหอดูรีวิวของตนผ่านหน้าเจ้าของหอ
 และแอดมินซ่อน/แสดงหรือลบรีวิวได้จากหน้ารีวิวใน Dashboard
 
-## ยังไม่มี
-- **KYC** ยังไม่มี API อัปโหลดเอกสารจริง
-- อัปโหลดรูป/ไฟล์เอกสารจริง (ตอนนี้เก็บแค่ลิงก์รูปและชื่อไฟล์)
+## ส่วนเสริมเจ้าของหอ (รวมมาจาก mamew)
+ตาราง `dorm_images` สร้างให้อัตโนมัติตอนเปิด `server.js`
+- แอดมินอนุมัติค่ามัดจำ -> เจ้าของหอได้แจ้งเตือน `deposit_approved` ที่กระดิ่ง (`GET /api/notifications`)
+- รายได้ = การจองที่เจ้าของหอกดยืนยันแล้ว (`booking_payments.status = 'completed'`)
+- ลบห้องไม่ได้ถ้ามีผู้เช่าอยู่หรือมีประวัติการจอง (ให้ตั้งสถานะ "ปรับปรุง" แทน)
+
+## เอกสารแนบคำขอลงประกาศหอ
+เจ้าของหอแนบไฟล์ (PDF/JPG/PNG ไม่เกิน 6 MB) ตอนเพิ่มหอ -> ตัวไฟล์เก็บที่ `storage/dorm_documents/<dormId>/`
+ฐานข้อมูลเก็บแค่ที่อยู่ไฟล์ใน `dorm_documents.private_storage_key` (ไม่เก็บไฟล์ลง MySQL เพราะ XAMPP จำกัดขนาดข้อมูลต่อคำสั่งไว้ 1 MB)
+โฟลเดอร์ `storage/` ไม่ได้เปิดให้เข้าตรงๆ ต้องเปิดผ่านหน้าแอดมินเท่านั้น และควรสำรองไว้พร้อมฐานข้อมูล
+แอดมินกด "ดูเอกสาร" ในหน้าตรวจคำขอ: รูปแสดงในแอป, PDF ใช้ลิงก์ชั่วคราว 10 นาทีเปิดในเบราว์เซอร์
+คำขอที่ส่งมาก่อนมีระบบนี้มีแค่ชื่อไฟล์ ต้องให้เจ้าของหอส่งเอกสารใหม่

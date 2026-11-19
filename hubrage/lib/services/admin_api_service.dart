@@ -22,6 +22,31 @@ class AdminApiService {
 
   static bool get isAdmin => Session.isLoggedIn && Session.role == 'admin';
 
+  /// ตัวเลขภาพรวมหน้า Overview (ผู้ใช้ หอ การจอง Payment/Report รอตรวจ รีวิว)
+  static Future<Map<String, dynamic>> getOverview() async {
+    final data = (await _send('GET', '/api/admin/overview'))['data'];
+    return data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+  }
+
+  /// เอกสารแนบของคำขอลงประกาศหอ: { id, name, type, mimeType, fileData (data URL) }
+  static Future<Map<String, dynamic>> getDormDocument(int documentId) async {
+    final data = (await _send('GET', '/api/admin/dorm-documents/$documentId'))['data'];
+    return data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+  }
+
+  /// ลิงก์ชั่วคราว (10 นาที) สำหรับเปิดไฟล์เอกสารในเบราว์เซอร์ เช่นไฟล์ PDF
+  static Future<String> getDormDocumentLink(int documentId) async {
+    final data = (await _send(
+      'GET',
+      '/api/admin/dorm-documents/$documentId/link',
+    ))['data'];
+    final path = data is Map ? data['path']?.toString() ?? '' : '';
+    if (path.isEmpty) {
+      throw const AdminApiException('เซิร์ฟเวอร์ไม่ส่งลิงก์เอกสารกลับมา');
+    }
+    return '${ApiConfig.baseUrl}$path';
+  }
+
   static Future<List<Map<String, dynamic>>> getSellers() async =>
       _list((await _send('GET', '/api/admin/sellers'))['data']);
 

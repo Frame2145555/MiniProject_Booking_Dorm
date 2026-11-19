@@ -185,14 +185,26 @@ Future<void> showNotificationsSheet(
         final type = notification['type']?.toString();
         final resolved = type == 'dorm_report_resolved';
         final dismissed = type == 'dorm_report_dismissed';
+        // เจ้าของหอ: แอดมินตรวจสอบค่ามัดจำแล้ว รอเจ้าของหอยืนยันการจอง
+        final deposit = type == 'deposit_approved';
         return (
-          icon: resolved
+          icon: deposit
+              ? Icons.payments_rounded
+              : resolved
               ? Icons.task_alt_rounded
               : dismissed
               ? Icons.info_outline_rounded
               : Icons.notifications_rounded,
-          color: dismissed ? AppColors.warning : AppColors.info,
-          background: dismissed ? AppColors.warningSoft : AppColors.infoSoft,
+          color: deposit
+              ? AppColors.success
+              : dismissed
+              ? AppColors.warning
+              : AppColors.info,
+          background: deposit
+              ? AppColors.successSoft
+              : dismissed
+              ? AppColors.warningSoft
+              : AppColors.infoSoft,
           title: notification['title']?.toString() ?? 'การแจ้งเตือน',
           message: notification['message']?.toString() ?? '',
           isRead: notification['isRead'] == true,

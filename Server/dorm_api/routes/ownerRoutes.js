@@ -32,7 +32,8 @@ router.post('/kyc', async (req, res) => {
   const idCardImage = req.body?.idCardImage;
   const selfieImage = req.body?.selfieImage;
   const fullName = String(req.body?.fullName || '').trim();
-  const phone = String(req.body?.phone || '').trim();
+  // รับเบอร์ที่มีขีด/เว้นวรรคได้ เช่น 081-234-5678 -> 0812345678
+  const phone = String(req.body?.phone || '').replace(/[-\s()]/g, '');
   const email = String(req.body?.email || '').trim().toLowerCase();
 
   console.log('[KYC DEBUG] submit received', {
@@ -44,8 +45,15 @@ router.post('/kyc', async (req, res) => {
     selfieImageLength: typeof selfieImage === 'string' ? selfieImage.length : 0,
   });
 
-  if (!fullName || !/^0\d{9}$/.test(phone) || !/^\S+@\S+\.\S+$/.test(email)) {
-    return res.status(400).json({ error: 'ข้อมูลชื่อ เบอร์โทรศัพท์ หรืออีเมลไม่ถูกต้อง', debugId });
+  // แจ้งทีละช่อง ผู้ใช้จะได้รู้ว่าต้องแก้ตรงไหน
+  if (!fullName) {
+    return res.status(400).json({ error: 'กรุณากรอกชื่อจริงและนามสกุล', debugId });
+  }
+  if (!/^0\d{8,9}$/.test(phone)) {
+    return res.status(400).json({ error: 'เบอร์โทรศัพท์ต้องขึ้นต้นด้วย 0 และมี 9-10 หลัก เช่น 0812345678', debugId });
+  }
+  if (!/^\S+@\S+\.\S+$/.test(email)) {
+    return res.status(400).json({ error: 'รูปแบบอีเมลไม่ถูกต้อง', debugId });
   }
   if (!/^\d{13}$/.test(idCardNumber)) {
     return res.status(400).json({ error: 'เลขประจำตัวประชาชนต้องมี 13 หลัก', debugId });
