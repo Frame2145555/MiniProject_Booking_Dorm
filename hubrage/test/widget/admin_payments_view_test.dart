@@ -8,11 +8,22 @@ import '../../lib/services/session.dart';
 import '../../lib/views/admin_payments_view.dart';
 import '../support/mock_booking_service.dart';
 
+/// จอทดสอบเริ่มต้นแค่ 800x600 -> ปุ่มด้านล่างของหน้าชำระเงิน/การจองหลุดขอบจอ กดไม่โดน
+/// ขยายจอให้สูงพอ (แบบเดียวกับเทสต์หน้า login) แล้วคืนค่าเดิมหลังจบเทสต์
+void useTallScreen(WidgetTester tester) {
+  tester.view.physicalSize = const Size(800, 1600);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+}
+
 /// ผู้เช่าจ่ายค่าจองแล้ว รอแอดมินตรวจ (ยอด 5,000 บาท)
 Reservation paidReservation() => bookingTestWithStatus(
   bookingTestReservation(amount: 5000),
   ReservationStatus.paid,
 );
+
+/// แถวผู้เช่าบนการ์ด = "ชื่อ • เบอร์โทร" (ข้อมูลทดสอบมีเบอร์ 0812345678)
+const tenantRow = 'ผู้เช่าทดสอบ • 0812345678';
 
 void main() {
   late BookingTestServer server; // ข้อมูลการจองฝั่ง server
@@ -28,6 +39,7 @@ void main() {
   tearDown(Session.clear);
 
   Future<void> openPayments(WidgetTester tester) async {
+    useTallScreen(tester);
     await tester.pumpWidget(
       MaterialApp(home: AdminPaymentsView(service: service)),
     );
@@ -40,7 +52,7 @@ void main() {
     await openPayments(tester);
 
     verify(() => service.adminPayments(status: 'paid')).called(1);
-    expect(find.text('ผู้เช่าทดสอบ'), findsOneWidget);
+    expect(find.text(tenantRow), findsOneWidget);
     expect(find.textContaining('หอทดสอบ'), findsOneWidget);
     expect(find.text('อนุมัติ'), findsOneWidget);
 
@@ -79,7 +91,7 @@ void main() {
         note: any(named: 'note'),
       ),
     );
-    expect(find.text('ผู้เช่าทดสอบ'), findsOneWidget);
+    expect(find.text(tenantRow), findsOneWidget);
   });
 
   testWidgets('keeps the payment and shows the error when review fails', (
@@ -100,7 +112,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('รายการนี้ถูกตรวจไปแล้ว'), findsOneWidget);
-    expect(find.text('ผู้เช่าทดสอบ'), findsOneWidget);
+    expect(find.text(tenantRow), findsOneWidget);
   });
 
   testWidgets('requires an admin session to access payment review', (
@@ -110,7 +122,7 @@ void main() {
     await openPayments(tester);
 
     expect(find.textContaining('เข้าสู่ระบบด้วยบัญชีแอดมิน'), findsOneWidget);
-    expect(find.text('ผู้เช่าทดสอบ'), findsNothing);
+    expect(find.text(tenantRow), findsNothing);
     verifyNever(() => service.adminPayments(status: any(named: 'status')));
   });
 }

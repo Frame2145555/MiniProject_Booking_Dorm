@@ -9,6 +9,14 @@ import '../../lib/theme/app_theme.dart';
 import '../../lib/views/owner_reservations_view.dart';
 import '../support/mock_booking_service.dart';
 
+/// จอทดสอบเริ่มต้นแค่ 800x600 -> ปุ่มด้านล่างของหน้าชำระเงิน/การจองหลุดขอบจอ กดไม่โดน
+/// ขยายจอให้สูงพอ (แบบเดียวกับเทสต์หน้า login) แล้วคืนค่าเดิมหลังจบเทสต์
+void useTallScreen(WidgetTester tester) {
+  tester.view.physicalSize = const Size(800, 1600);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+}
+
 /// คำขอจองที่ผู้เช่าจ่ายเงินแล้ว + แอดมินตรวจแล้ว (รอเจ้าของหอยืนยัน)
 Reservation approvedReservation({int id = bookingTestReservationId, String room = 'A08'}) =>
     bookingTestWithStatus(
@@ -31,6 +39,7 @@ void main() {
   tearDown(Session.clear);
 
   Future<void> openReservations(WidgetTester tester) async {
+    useTallScreen(tester);
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
@@ -212,6 +221,7 @@ void main() {
   group('OwnerRentPlanView (ตั้งราคาเช่า)', () {
     /// เปิดหน้าตั้งราคาจากหน้าอื่น (หน้าจะปิดตัวเองหลังบันทึกสำเร็จ)
     Future<void> openPlans(WidgetTester tester) async {
+      useTallScreen(tester);
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light(),

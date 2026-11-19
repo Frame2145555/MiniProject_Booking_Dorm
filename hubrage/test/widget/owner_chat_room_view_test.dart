@@ -39,8 +39,15 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Align ที่ใกล้ข้อความที่สุด (ฟองซ้าย/ขวา = Align, กล่องแจ้งเตือนจากระบบ = Center ซึ่งเป็นลูกของ Align)
+  /// ใช้ `w is Align` เพราะ find.byType(Align) ไม่นับคลาสลูกอย่าง Center
   Align bubbleOf(WidgetTester tester, String text) => tester.widget<Align>(
-    find.ancestor(of: find.text(text), matching: find.byType(Align)).first,
+    find
+        .ancestor(
+          of: find.text(text),
+          matching: find.byWidgetPredicate((w) => w is Align),
+        )
+        .first,
   );
 
   testWidgets('shows the tenant, dorm and an owner-side empty prompt', (
@@ -91,6 +98,7 @@ void main() {
     expect(find.text(notice), findsOneWidget); // ตัดคำนำหน้า "[แจ้งเตือนจากระบบ]" ออกแล้ว
     expect(find.textContaining('[แจ้งเตือนจากระบบ]'), findsNothing);
     // ไม่ใช่ฟองซ้าย/ขวา แต่อยู่กลางจอ
+    expect(bubbleOf(tester, notice), isA<Center>());
     expect(bubbleOf(tester, notice).alignment, Alignment.center);
   });
 

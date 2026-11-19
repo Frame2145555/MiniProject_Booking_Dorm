@@ -11,6 +11,14 @@ import '../../lib/views/payment_view.dart';
 import '../../lib/widgets/reservation_widgets.dart';
 import '../support/mock_booking_service.dart';
 
+/// จอทดสอบเริ่มต้นแค่ 800x600 -> ปุ่มด้านล่างของหน้าชำระเงิน/การจองหลุดขอบจอ กดไม่โดน
+/// ขยายจอให้สูงพอ (แบบเดียวกับเทสต์หน้า login) แล้วคืนค่าเดิมหลังจบเทสต์
+void useTallScreen(WidgetTester tester) {
+  tester.view.physicalSize = const Size(800, 1600);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+}
+
 // หมายเหตุ: หน้าชำระเงินนับถอยหลังทุก 1 วินาทีตอน "รอชำระเงิน"
 // pumpAndSettle จะรอไม่จบ จึงใช้ pumpFrames (เดินเวลาทีละช่วง) แทนในสถานะนั้น
 Future<void> pumpFrames(WidgetTester tester, [int frames = 6]) async {
@@ -34,6 +42,7 @@ void main() {
   tearDown(Session.clear);
 
   Future<void> openPayment(WidgetTester tester) async {
+    useTallScreen(tester);
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
@@ -190,6 +199,7 @@ void main() {
           ReservationStatus.approved,
         ),
       );
+      useTallScreen(tester);
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light(),
@@ -210,6 +220,7 @@ void main() {
 
   group('MyReservationsView (การจองของฉัน)', () {
     Future<void> openList(WidgetTester tester) async {
+      useTallScreen(tester);
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light(),
