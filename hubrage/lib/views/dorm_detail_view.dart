@@ -189,6 +189,15 @@ class _DormDetailViewState extends State<DormDetailView> {
       'ซอยรามคำแหง 24 (แยก 2) • แขวงหัวหมาก เขตบางกะปิ กรุงเทพฯ';
   String get _price => widget.dorm['price']?.toString() ?? '5,000 - 8,500';
   String get _phone => widget.dorm['phone']?.toString() ?? '081-234-5678';
+  double? get _averageRating {
+    if (_reviews.isEmpty) return null;
+    final ratings = _reviews
+        .map((review) => num.tryParse('${review['rating']}'))
+        .whereType<num>()
+        .toList();
+    if (ratings.isEmpty) return null;
+    return ratings.reduce((sum, rating) => sum + rating) / ratings.length;
+  }
   String get _description =>
       _detail?['description']?.toString() ??
       widget.dorm['description']?.toString() ??
@@ -911,7 +920,7 @@ class _DormDetailViewState extends State<DormDetailView> {
                           color: AppColors.warningSoft,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Row(
+                        child: Row(
                           children: [
                             Icon(
                               Icons.star_rounded,
@@ -920,8 +929,10 @@ class _DormDetailViewState extends State<DormDetailView> {
                             ),
                             SizedBox(width: 4),
                             Text(
-                              '4.7 / 5',
-                              style: TextStyle(
+                              _averageRating == null
+                                  ? 'ใหม่'
+                                  : '${_averageRating!.toStringAsFixed(1)} / 5',
+                              style: const TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 12,
                               ),
