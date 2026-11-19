@@ -6,7 +6,7 @@ import '../models/favorites_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/dorm_card.dart';
 
-/// หน้าค้นหาหอพัก: ค้นหาตามชื่อ/มหาวิทยาลัย/ขนส่ง + กรองราคา + กรองสิ่งอำนวยความสะดวก
+/// หน้าค้นหาหอพัก: ค้นหาตามชื่อ/มหาวิทยาลัย/ขนส่ง + กรองราคา + กรองสิ่งอำนวยความสะดวก + เรียงลำดับ
 class SearchView extends StatefulWidget {
   final AdminConsoleState? consoleState;
   final FavoritesState favorites;
@@ -32,6 +32,7 @@ class _SearchViewState extends State<SearchView> {
   RangeValues _selectedPriceRange = const RangeValues(3000, 12000);
   bool _isPriceFilterActive = false;
   final Set<String> _selectedAmenities = {};
+  _SortOption _sort = _SortOption.recommended;
 
   // แผงกรอง (แสดงในหน้าค้นหาเอง ไม่ใช้ modal เพื่อให้ header ด้านบนไม่ถูกบัง/ไม่มืด)
   _FilterPanel _panel = _FilterPanel.none;
@@ -73,6 +74,48 @@ class _SearchViewState extends State<SearchView> {
     }).toList();
   }
 
+  /// เรียงผลที่กรองแล้วตามตัวเลือก
+  /// - เรียงแบบ stable: ค่าเท่ากันคงลำดับเดิมของแคตตาล็อก (List.sort ของ Dart ไม่รับประกันข้อนี้ จึงเทียบ index ต่อ)
+  /// - หอที่ยังไม่มีคะแนนไปท้ายสุดเมื่อเรียงตามคะแนน / หอที่ไม่มียอดวิวนับเป็น 0
+  List<Map<String, dynamic>> _sorted(List<Map<String, dynamic>> dorms) {
+    if (_sort == _SortOption.recommended) return dorms;
+
+    int price(Map<String, dynamic> d, String key) =>
+        num.tryParse('${d[key]}')?.round() ?? 0;
+    num? rating(Map<String, dynamic> d) => num.tryParse('${d['rating'] ?? ''}');
+    int views(Map<String, dynamic> d) =>
+        widget.consoleState?.dormViews[d['id'].toString()] ?? 0;
+    String name(Map<String, dynamic> d) => d['title'].toString().toLowerCase();
+
+    int compare(Map<String, dynamic> a, Map<String, dynamic> b) {
+      switch (_sort) {
+        case _SortOption.priceLow:
+          return price(a, 'minPrice').compareTo(price(b, 'minPrice'));
+        case _SortOption.priceHigh:
+          return price(b, 'maxPrice').compareTo(price(a, 'maxPrice'));
+        case _SortOption.rating:
+          final ra = rating(a), rb = rating(b);
+          if (ra == null || rb == null) {
+            return (ra == null ? 1 : 0) - (rb == null ? 1 : 0); // ไม่มีคะแนนไปท้าย
+          }
+          return rb.compareTo(ra);
+        case _SortOption.views:
+          return views(b).compareTo(views(a));
+        case _SortOption.name:
+          return name(a).compareTo(name(b)); // เทียบรหัสตัวอักษร: อังกฤษก่อน แล้วไทย ก-ฮ
+        case _SortOption.recommended:
+          return 0;
+      }
+    }
+
+    final order = List<int>.generate(dorms.length, (i) => i)
+      ..sort((x, y) {
+        final c = compare(dorms[x], dorms[y]);
+        return c != 0 ? c : x.compareTo(y);
+      });
+    return [for (final i in order) dorms[i]];
+  }
+
   void _setHeaderVisible(bool visible) =>
       widget.onHeaderVisibleChanged?.call(visible);
 
@@ -100,6 +143,52 @@ class _SearchViewState extends State<SearchView> {
   }
 
   void _closePanel() => setState(() => _panel = _FilterPanel.none);
+
+  void _showSortPanel() {
+    _setHeaderVisible(true);
+    setState(() => _panel = _FilterPanel.sort);
+  }
+
+  Widget _buildSortPanel() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(left: 12),
+                child: Text(
+                  'เรียงลำดับผลการค้นหา',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: _closePanel,
+              ),
+            ],
+          ),
+          for (final option in _SortOption.values)
+            ListTile(
+              leading: Icon(option.icon, color: AppColors.ink),
+              title: Text(option.label),
+              trailing: option == _sort
+                  ? const Icon(Icons.check_rounded, color: AppColors.accent)
+                  : null,
+              selected: option == _sort,
+              onTap: () => setState(() {
+                _sort = option;
+                _panel = _FilterPanel.none;
+              }),
+            ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildPricePanel() {
     final tempRange = _tempRange;
@@ -441,7 +530,7 @@ class _SearchViewState extends State<SearchView> {
         DormCatalog.live, // รายการหอจริงจาก server
       ]),
       builder: (context, _) {
-        final filteredDorms = _getFilteredDorms();
+        final filteredDorms = _sorted(_getFilteredDorms());
         final content = Column(
           children: [
             Padding(
@@ -544,6 +633,16 @@ class _SearchViewState extends State<SearchView> {
                         : 'ช่วงราคา',
                     selected: _isPriceFilterActive,
                     onTap: _showPriceRangeModal,
+                  ),
+                  const SizedBox(width: 10),
+                  // ปุ่มเรียงลำดับ: ป้ายเปลี่ยนเป็นชื่อตัวเลือกที่เลือก (ค่าเริ่มต้น = "เรียงตาม")
+                  _filterPill(
+                    icon: Icons.swap_vert_rounded,
+                    label: _sort == _SortOption.recommended
+                        ? 'เรียงตาม'
+                        : _sort.label,
+                    selected: _sort != _SortOption.recommended,
+                    onTap: _showSortPanel,
                   ),
                   const SizedBox(width: 10),
                   ..._selectedAmenities.map((amenity) {
@@ -703,6 +802,8 @@ class _SearchViewState extends State<SearchView> {
                     clipBehavior: Clip.antiAlias,
                     child: _panel == _FilterPanel.price
                         ? _buildPricePanel()
+                        : _panel == _FilterPanel.sort
+                        ? _buildSortPanel()
                         : _buildAmenitiesPanel(maxH * 0.85),
                   ),
                 ),
@@ -715,4 +816,18 @@ class _SearchViewState extends State<SearchView> {
   }
 }
 
-enum _FilterPanel { none, price, amenities }
+enum _FilterPanel { none, price, amenities, sort }
+
+/// ตัวเลือกการเรียงลำดับในหน้าค้นหา
+enum _SortOption {
+  recommended('แนะนำ (ค่าเริ่มต้น)', Icons.auto_awesome_outlined),
+  priceLow('ราคา: ต่ำ → สูง', Icons.trending_up_rounded),
+  priceHigh('ราคา: สูง → ต่ำ', Icons.trending_down_rounded),
+  rating('คะแนนสูงสุด', Icons.star_outline_rounded),
+  views('ยอดเข้าชมมากที่สุด', Icons.visibility_outlined),
+  name('ชื่อหอพัก ก-ฮ / A-Z', Icons.sort_by_alpha_rounded);
+
+  const _SortOption(this.label, this.icon);
+  final String label;
+  final IconData icon;
+}

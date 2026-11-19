@@ -21,6 +21,10 @@ flutter test test/widget/tenant_payment_view_test.dart --reporter expanded
 flutter test test/widget/admin_payments_view_test.dart --reporter expanded
 flutter test test/widget/owner_reservations_view_test.dart --reporter expanded
 
+flutter test test/widget/tenant_search_view_test.dart --reporter expanded
+
+flutter test test/widget --reporter expanded
+
 
 flutter test test/unit/tenant_dorm_catalog_test.dart test/unit/admin_dorm_catalog_test.dart test/unit/owner_dorm_request_test.dart --reporter expanded
 flutter test test/widget/tenant_search_view_test.dart --reporter expanded

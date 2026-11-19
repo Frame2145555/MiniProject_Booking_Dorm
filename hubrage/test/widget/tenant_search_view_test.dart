@@ -10,11 +10,12 @@ import '../../lib/views/search_view.dart';
 import '../../lib/widgets/dorm_card.dart';
 
 // ชื่อหอตัวอย่างใน DormCatalog.baseDorms
-const d1 = 'หอรวย เธะ'; // 5,000-8,500  คะแนน 4.7  วิว 1280
-const d2 = 'หออิสลาม แกรนด์'; // 6,500-9,000  คะแนน 4.0  วิว 642
-const d3 = 'HU 24 อพาร์ตเมนต์'; // 7,200-11,000 คะแนน 4.9  วิว 2094
+// (หอตัวอย่างไม่มีคะแนนแล้ว -> คะแนนมาจากรีวิวจริง เทสต์เรียงตามคะแนนจึงใส่คะแนนให้หอที่เพิ่มเอง)
+const d1 = 'หอรวย เธะ'; // 5,000-8,500  วิว 1280
+const d2 = 'หออิสลาม แกรนด์'; // 6,500-9,000  วิว 642
+const d3 = 'HU 24 อพาร์ตเมนต์'; // 7,200-11,000 วิว 2094
 const d4 =
-    'กรีนวิลล์ คอนโดเช่า'; // 4,800-7,000  คะแนน 4.5  วิว 0 (ไม่มีใน dormViews)
+    'กรีนวิลล์ คอนโดเช่า'; // 4,800-7,000  วิว 0 (ไม่มีใน dormViews)
 
 /// แสดงหน้าค้นหาบนจอสูง (ให้ ListView สร้างการ์ดครบทุกใบ)
 /// seller_003 (เจ้าของ HU 24) ถูกระงับในข้อมูลตัวอย่าง -> ค่าเริ่มต้นคืนสถานะให้เพื่อให้เห็น 4 หอ
@@ -63,14 +64,15 @@ Future<void> chooseSort(WidgetTester tester, String label) async {
   await tester.pump();
 }
 
-/// เพิ่มหอของเจ้าของที่แอดมินอนุมัติแล้ว (ไม่มีคะแนน ไม่มียอดวิว)
+/// เพิ่มหอของเจ้าของที่แอดมินอนุมัติแล้ว (ไม่มียอดวิว / ไม่ใส่ rating = ยังไม่มีคะแนน)
 void addApproved(
   AdminConsoleState console,
   String id,
   String name,
   int min,
-  int max,
-) {
+  int max, {
+  String? rating,
+}) {
   console.submitDormRequest(
     sellerId: 'seller_new',
     sellerName: 'เจ้าของใหม่',
@@ -87,6 +89,8 @@ void addApproved(
     imageUrl: '',
     documents: const <Map<String, String>>[],
   );
+  // คะแนนเฉลี่ยจากรีวิว (แบบเดียวกับที่ server ส่งมาในช่อง rating)
+  if (rating != null) console.dormRequests.first['rating'] = rating;
   console.reviewDormRequest(
     console.dormRequests.first['id'].toString(),
     approve: true,
@@ -329,10 +333,22 @@ void main() {
       expect(shown(tester), [d3, d2, d1, d4]); // 11,000 / 9,000 / 8,500 / 7,000
     });
 
-    testWidgets('คะแนนสูงสุด', (tester) async {
-      await pumpSearch(tester);
+    testWidgets('คะแนนสูงสุด (หอที่ยังไม่มีคะแนนอยู่ท้าย คงลำดับเดิม)', (
+      tester,
+    ) async {
+      final console = await pumpSearch(tester);
+      addApproved(console, 'dorm_r3', 'หอคะแนนกลาง', 5000, 6000, rating: '4.2');
+      addApproved(console, 'dorm_r1', 'หอคะแนนสูง', 5000, 6000, rating: '4.9');
+      addApproved(console, 'dorm_r2', 'หอคะแนนต่ำ', 5000, 6000, rating: '3.5');
+      await tester.pump();
+
       await chooseSort(tester, 'คะแนนสูงสุด');
-      expect(shown(tester), [d3, d1, d4, d2]); // 4.9 / 4.7 / 4.5 / 4.0
+      expect(shown(tester), [
+        'หอคะแนนสูง', // 4.9
+        'หอคะแนนกลาง', // 4.2
+        'หอคะแนนต่ำ', // 3.5
+        d1, d2, d3, d4, // ยังไม่มีคะแนน -> ลำดับเดิมของแคตตาล็อก
+      ]);
     });
 
     testWidgets('ยอดเข้าชมมากที่สุด (หอที่ไม่มียอดไปท้าย)', (tester) async {
@@ -409,29 +425,6 @@ void main() {
 
         await chooseSort(tester, 'ราคา: สูง → ต่ำ');
         expect(shown(tester), [d3, d2, d1, 'หอราคาเท่า', d4]);
-      },
-    );
-
-    testWidgets('หอที่ยังไม่มีคะแนนไปท้ายสุดเมื่อเรียงตามคะแนน', (
-      tester,
-    ) async {
-      final console = await pumpSearch(tester);
-      addApproved(console, 'dorm_norate', 'หอยังไม่มีคะแนน', 5000, 6000);
-      await tester.pump();
-
-      await chooseSort(tester, 'คะแนนสูงสุด');
-      expect(shown(tester), [d3, d1, d4, d2, 'หอยังไม่มีคะแนน']);
-    });
-
-    testWidgets(
-      'หอที่ยังไม่มียอดวิวเท่ากับ 0 และอยู่หลังหอที่มีวิว (เท่ากันคงลำดับเดิม)',
-      (tester) async {
-        final console = await pumpSearch(tester);
-        addApproved(console, 'dorm_noview', 'หอไม่มีวิว', 5000, 6000);
-        await tester.pump();
-
-        await chooseSort(tester, 'ยอดเข้าชมมากที่สุด');
-        expect(shown(tester), [d3, d1, d2, d4, 'หอไม่มีวิว']);
       },
     );
   });

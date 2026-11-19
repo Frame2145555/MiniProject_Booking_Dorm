@@ -402,6 +402,10 @@ class AdminConsoleState extends ChangeNotifier {
     }
   }
 
+  /// ตัวนับต่อท้าย id คำขอ: บน Windows นาฬิกาละเอียดไม่ถึงไมโครวินาที
+  /// ส่งคำขอติดกันเร็ว ๆ แล้ว id ซ้ำกันได้ -> อนุมัติผิดหอ
+  int _requestSeq = 0;
+
   void submitDormRequest({
     required String sellerId,
     required String sellerName,
@@ -421,7 +425,8 @@ class AdminConsoleState extends ChangeNotifier {
     required List<Map<String, String>> documents,
   }) {
     dormRequests.insert(0, {
-      'id': 'dorm-request-${DateTime.now().microsecondsSinceEpoch}',
+      'id':
+          'dorm-request-${DateTime.now().microsecondsSinceEpoch}-${_requestSeq++}',
       'sellerId': sellerId,
       'sellerName': sellerName,
       'dormId': dormId,
